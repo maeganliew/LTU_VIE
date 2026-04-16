@@ -1,2 +1,9 @@
-panda3d
-numpy
+black==26.3.1
+click==8.3.2
+colorama==0.4.6
+mypy_extensions==1.1.0
+packaging==26.1
+Panda3D==1.10.16
+pathspec==1.0.4
+platformdirs==4.9.6
+pytokens==0.4.1

@@ -13,6 +13,7 @@ class AgentSystem:
         self.grid = SpatialGrid(config.cell_size)
         self.next_id = 1
 
+    # use default initial num form config if no count provided
     def initialize_agents(self, count=None):
         if count is None:
             count = self.config.initial_agent_count
@@ -21,6 +22,7 @@ class AgentSystem:
 
         for _ in range(count):
             self.world_state.agents.append(self._create_random_agent())
+
 
     def _create_random_agent(self):
         x = random.uniform(0, self.config.world_width - 1)
@@ -35,6 +37,7 @@ class AgentSystem:
         self.next_id += 1
         return agent
 
+
     def sync_spawn_count(self):
         desired = self.world_state.spawn_count
         current = len(self.world_state.agents)
@@ -45,11 +48,16 @@ class AgentSystem:
                     self.world_state.agents.append(self._create_random_agent())
         elif desired < current:
             self.world_state.agents = self.world_state.agents[:desired]
+            
 
     def update(self, dt):
+        # ensure world has correct number of agent
         self.sync_spawn_count()
+        
+        # rebuild grid using current agent position
         self.grid.rebuild(self.world_state.agents)
 
+        # loop through every agent and update it
         for agent in self.world_state.agents:
             agent.target = self.world_state.target_position
 
@@ -60,11 +68,13 @@ class AgentSystem:
                 dt,
             )
 
+            # adjust to new position by pushing away from nearby agents
             if self.world_state.debug_flags.get("avoidance", True):
                 new_position = self.apply_avoidance(agent, new_position)
 
             agent.position = self.clamp_to_world(new_position)
             agent.velocity = velocity
+
 
     def apply_avoidance(self, agent, proposed_position):
         px, py, pz = proposed_position
@@ -89,6 +99,8 @@ class AgentSystem:
                 strength = (
                     self.config.neighbor_radius - distance
                 ) / self.config.neighbor_radius
+                
+                # push away from the neighbor in the outwards direction
                 push_x += (dx / distance) * strength * self.config.avoidance_strength
                 push_z += (dz / distance) * strength * self.config.avoidance_strength
 

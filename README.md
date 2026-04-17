@@ -22,11 +22,7 @@ The simulation writes updated positions into `WorldState.agents`, which are then
 responsible for:
 - capturing keyboard and mouse input
 - logging input events
-- updating WorldState based on input:
-
-spawn / remove agents
-set target positions
-
+- updating WorldState based on input: spawn / remove agents, set target positions
 - providing controls to adjust simulation load (10 → 500 agents)
 - implementing performance tools (FPS, frame time, toggles)
 
@@ -40,12 +36,7 @@ responsible for:
 - rendering agents using WorldState.agents
 - create and update NodePath objects
 - sync positions every frame
-
-handling dynamic rendering:
-
-spawn/despawn visual agents
-scale up to 500 agents efficiently
-
+- handling dynamic rendering: spawn/despawn visual agents, scale up to 500 agents efficiently
 - optimizing rendering using object reuse (pooling)
 
 The rendering system reads from WorldState and displays the simulation visually without modifying any logic.

@@ -1,16 +1,56 @@
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import CardMaker
+from panda3d.core import AmbientLight, DirectionalLight, LineSegs, NodePath, CardMaker
 
 class Renderer(ShowBase):
     def __init__(self):
         ShowBase.__init__(self)
-        cm = CardMaker("card")
-        cm.setFrame(-1, 1, -1, 1)
-        card = self.render.attachNewNode(cm.generate())
-        card.setColor(1, 0, 0, 1)
-        card.setTwoSided(True)
-        card.setLightOff()
-        self.camera.setPos(0, -3, 0)
+        
+        # Lighting
+        ambient = AmbientLight("ambient")
+        ambient.setColor((0.5, 0.5, 0.5, 1))
+        self.render.setLight(self.render.attachNewNode(ambient))
+        
+        directional = DirectionalLight("directional")
+        directional.setColor((1, 1, 1, 1))
+        dlnp = self.render.attachNewNode(directional)
+        dlnp.setHpr(0, -60, 0)
+        self.render.setLight(dlnp)
+        
+        # Grid
+        lines = LineSegs()
+        lines.setColor(0.5, 0.5, 0.5, 1)
+        for i in range(-20, 21, 2):
+            lines.moveTo(i, -20, 0)
+            lines.drawTo(i, 20, 0)
+            lines.moveTo(-20, i, 0)
+            lines.drawTo(20, i, 0)
+        grid = NodePath(lines.create())
+        grid.reparentTo(self.render)
+        
+        # Cube (3D box)
+        cube = self.loader.loadModel("models/box")
+        if cube is None:
+            # Fallback: build cube from cards
+            cm = CardMaker("face")
+            cm.setFrame(-0.5, 0.5, -0.5, 0.5)
+            for pos, hpr in [
+                ((0,0,0.5), (0,0,0)), ((0,0,-0.5), (0,0,0)),
+                ((0,0.5,0), (0,90,0)), ((0,-0.5,0), (0,-90,0)),
+                ((0.5,0,0), (0,0,90)), ((-0.5,0,0), (0,0,-90))
+            ]:
+                face = self.render.attachNewNode(cm.generate())
+                face.setPos(pos)
+                face.setHpr(hpr)
+                face.setColor(0.2, 0.6, 1, 1)
+                face.setTwoSided(True)
+        else:
+            cube.reparentTo(self.render)
+            cube.setScale(1, 1, 1)
+            cube.setColor(0.2, 0.6, 1, 1)
+            cube.setPos(0, 0, 0)
+        
+        self.camera.setPos(10, -15, 10)
         self.camera.lookAt(0, 0, 0)
 
-Renderer().run()
+if __name__ == "__main__":
+    Renderer().run()

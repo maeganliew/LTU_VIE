@@ -77,6 +77,10 @@ class AgentSystem:
             agent.position = self.clamp_to_world(new_position)
             agent.velocity = velocity
 
+        print("TARGET:", self.world_state.target_position)
+        print("AGENT0 TARGET:", self.world_state.agents[0].target)
+        print("AGENT0 POS:", self.world_state.agents[0].position)
+
 
     def apply_avoidance(self, agent, proposed_position):
         px, py, pz = proposed_position

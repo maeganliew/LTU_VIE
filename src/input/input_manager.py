@@ -1,8 +1,14 @@
 from direct.showbase.DirectObject import DirectObject
+from panda3d.core import WindowProperties
 
 class InputManager(DirectObject):
-    def __init__(self):
+    def __init__(self, base, world_state):
         super().__init__()
+
+        print("BASE TYPE:", type(base))
+
+        self.world_state = world_state
+        self.base = base
 
         print("[INPUT] InputManager initialized")
 
@@ -13,6 +19,13 @@ class InputManager(DirectObject):
         # Setup listeners
         self.setup_key_listeners()
         self.setup_mouse_listeners()
+
+        # Bind keys, q means 10 more agents, e means 10 less agents
+        self.base.accept("q", self.spawn_more)
+        self.base.accept("e", self.spawn_less)
+
+        # can click to set target position
+        self.base.accept("mouse1", self.on_click)
 
     def setup_key_listeners(self):
         # Example keys
@@ -44,3 +57,29 @@ class InputManager(DirectObject):
             self.mouse_click = (mouse_pos.getX(), mouse_pos.getY())
 
             print(f"[INPUT] Mouse clicked at: {self.mouse_click}")
+
+    def spawn_more(self):
+        self.world_state.spawn_count += 10
+        print("[INPUT] spawn_count =", self.world_state.spawn_count)
+
+    def spawn_less(self):
+        self.world_state.spawn_count -= 10
+        print("[INPUT] spawn_count =", self.world_state.spawn_count)
+
+    def setup_mouse(self):
+        self.base.accept("mouse1", self.on_click)
+
+    def on_click(self):
+        print("[MOUSE] click detected")
+        if not self.base.mouseWatcherNode.hasMouse():
+            return
+
+        mpos = self.base.mouseWatcherNode.getMouse()
+
+        # simple world mapping (top-down plane assumption)
+        x = mpos.x * 20
+        z = mpos.y * 20
+
+        self.world_state.target_position = (x, 0.0, z)
+
+        print("[INPUT] target =", self.world_state.target_position)

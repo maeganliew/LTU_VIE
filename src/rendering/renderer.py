@@ -1,9 +1,12 @@
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import AmbientLight, DirectionalLight, LineSegs, NodePath, CardMaker
 
-class Renderer(ShowBase):
-    def __init__(self):
-        ShowBase.__init__(self)
+class Renderer:
+    def __init__(self, base):
+        self.base = base
+        self.render = base.render
+        self.loader = base.loader
+        self.camera = base.camera
         
         # Lighting
         ambient = AmbientLight("ambient")
@@ -52,5 +55,6 @@ class Renderer(ShowBase):
         self.camera.setPos(10, -15, 10)
         self.camera.lookAt(0, 0, 0)
 
-if __name__ == "__main__":
-    Renderer().run()
+    def update(self, agents):
+        # Temporary: just print number of agents
+        print(f"[RENDER] Rendering {len(agents)} agents")

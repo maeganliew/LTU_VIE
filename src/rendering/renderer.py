@@ -52,9 +52,27 @@ class Renderer:
             cube.setColor(0.2, 0.6, 1, 1)
             cube.setPos(0, 0, 0)
         
-        self.camera.setPos(10, -15, 10)
+        #self.camera.setPos(10, -15, 10)
+        self.camera.setPos(0, -50, 50)
         self.camera.lookAt(0, 0, 0)
+        self.agent_nodes = {}
 
     def update(self, agents):
-        # Temporary: just print number of agents
+
         print(f"[RENDER] Rendering {len(agents)} agents")
+
+        # create cubes if needed
+        for i, agent in enumerate(agents):
+
+            if i not in self.agent_nodes:
+                node = self.loader.loadModel("models/box")
+                node.reparentTo(self.render)
+                node.setScale(1.0,1.0,1.0)
+                node.setColor(1,0,0,1)
+
+                # use index here instead of Agent object, Agent object may not be hashable
+                self.agent_nodes[i] = node
+
+            # update position
+            node = self.agent_nodes[i]
+            node.setPos(agent.position[0], 0, agent.position[2]+0.5)

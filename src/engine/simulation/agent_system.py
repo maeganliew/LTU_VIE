@@ -24,8 +24,8 @@ class AgentSystem:
 
 
     def _create_random_agent(self):
-        x = random.uniform(0, self.config.world_width - 1)
-        z = random.uniform(0, self.config.world_height - 1)
+        x = random.uniform(-self.config.world_width / 2, self.config.world_width / 2)
+        z = random.uniform(-self.config.world_height / 2, self.config.world_height / 2)
 
         agent = AgentState(
             agent_id=self.next_id,
@@ -114,6 +114,6 @@ class AgentSystem:
 
     def clamp_to_world(self, position):
         x, y, z = position
-        x = max(0.0, min(x, self.config.world_width - 1))
-        z = max(0.0, min(z, self.config.world_height - 1))
+        x = max(-self.config.world_width / 2, min(x, self.config.world_width / 2))
+        z = max(-self.config.world_height / 2, min(z, self.config.world_height / 2))
         return (x, y, z)

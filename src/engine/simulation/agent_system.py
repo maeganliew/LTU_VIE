@@ -51,6 +51,40 @@ class AgentSystem:
     def spawn_agents(self, count):
         for _ in range(count):
             self.world_state.agents.append(self._create_random_agent())
+            
+    # blocked-cell logic
+    def position_to_cell(self, position):
+        x, _, z = position
+        return int(x // self.config.cell_size), int(z // self.config.cell_size)
+
+    def is_blocked(self, position):
+        cell = self.position_to_cell(position)
+        return cell in self.world_state.obstacles
+
+    def resolve_obstacle_collision(self, current_position, proposed_position):
+        if not self.world_state.debug_flags.get("obstacles", True):
+            return proposed_position
+
+        if not self.is_blocked(proposed_position):
+            return proposed_position
+
+        cx, cy, cz = current_position
+        px, py, pz = proposed_position
+
+        # Try sliding along x only
+        slide_x = (px, py, cz)
+        if not self.is_blocked(slide_x):
+            return slide_x
+
+        # Try sliding along z only
+        slide_z = (cx, py, pz)
+        if not self.is_blocked(slide_z):
+            return slide_z
+
+        # If both blocked, stay in place
+        return current_position
+    
+    
 
     def update(self, dt):
         # ensure world has correct number of agent
@@ -74,12 +108,16 @@ class AgentSystem:
             if self.world_state.debug_flags.get("avoidance", True):
                 new_position = self.apply_avoidance(agent, new_position)
 
+            # do not walk straight through blocked cells
+            new_position = self.resolve_obstacle_collision(agent.position, new_position)
+
             agent.position = self.clamp_to_world(new_position)
             agent.velocity = velocity
 
-        print("TARGET:", self.world_state.target_position)
-        print("AGENT0 TARGET:", self.world_state.agents[0].target)
-        print("AGENT0 POS:", self.world_state.agents[0].position)
+        # keep logging only at controlled intervals in World.update
+        # print("TARGET:", self.world_state.target_position)
+        # print("AGENT0 TARGET:", self.world_state.agents[0].target)
+        # print("AGENT0 POS:", self.world_state.agents[0].position)
 
 
     def apply_avoidance(self, agent, proposed_position):

@@ -30,37 +30,9 @@ class Renderer:
         grid = NodePath(lines.create())
         grid.reparentTo(self.render)
         
-        # Cube (3D box)
-        cube = self.loader.loadModel("models/box")
-        if cube is None:
-            # Fallback: build cube from cards
-            cm = CardMaker("face")
-            cm.setFrame(-0.5, 0.5, -0.5, 0.5)
-            for pos, hpr in [
-                ((0,0,0.5), (0,0,0)), ((0,0,-0.5), (0,0,0)),
-                ((0,0.5,0), (0,90,0)), ((0,-0.5,0), (0,-90,0)),
-                ((0.5,0,0), (0,0,90)), ((-0.5,0,0), (0,0,-90))
-            ]:
-                face = self.render.attachNewNode(cm.generate())
-                face.setPos(pos)
-                face.setHpr(hpr)
-                face.setColor(0.2, 0.6, 1, 1)
-                face.setTwoSided(True)
-        else:
-            cube.reparentTo(self.render)
-            cube.setScale(1, 1, 1)
-            cube.setColor(0.2, 0.6, 1, 1)
-            cube.setPos(0, 0, 0)
-        
         self.camera.setPos(10, -20, 10)
         self.camera.lookAt(45, 0, 0)
         self.agent_nodes = {}
-
-        #DEBUG - test cube
-        test = self.loader.loadModel("models/box")
-        test.reparentTo(self.render)
-        test.setPos(0, 10, 2)
-        test.setScale(0.5)
 
     # read positions, move cubes visually
     def update(self, agents):

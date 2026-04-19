@@ -10,8 +10,7 @@ class CrowdSimApp(ShowBase):
         print("[APP] Panda3D started")
 
         self.world = World()
-        self.input_manager = InputManager()
-
+        self.input_manager = InputManager(self, self.world.world_state)
         self.renderer = Renderer(self)
 
         self.taskMgr.add(self.update, "update")

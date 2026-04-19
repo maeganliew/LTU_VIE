@@ -1,4 +1,3 @@
-from src.engine.simulation.agent import Agent
 import math
 import random
 
@@ -51,11 +50,7 @@ class AgentSystem:
             
     def spawn_agents(self, count):
         for _ in range(count):
-            self.agents.append(Agent((
-                random.uniform(-20, 20),
-                0,
-                random.uniform(-20, 20),
-            )))
+            self.world_state.agents.append(self._create_random_agent())
 
     def update(self, dt):
         # ensure world has correct number of agent

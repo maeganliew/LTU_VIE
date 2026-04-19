@@ -21,6 +21,6 @@ class CrowdSimApp(ShowBase):
 
         self.world.update(dt)
 
-        self.renderer.update(self.world.agent_system.agents)
+        self.renderer.update(self.world.world_state.agents)
 
         return task.cont

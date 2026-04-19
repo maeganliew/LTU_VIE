@@ -52,11 +52,17 @@ class Renderer:
             cube.setColor(0.2, 0.6, 1, 1)
             cube.setPos(0, 0, 0)
         
-        #self.camera.setPos(10, -15, 10)
-        self.camera.setPos(0, -50, 50)
-        self.camera.lookAt(0, 0, 0)
+        self.camera.setPos(10, -20, 10)
+        self.camera.lookAt(45, 0, 0)
         self.agent_nodes = {}
 
+        #DEBUG - test cube
+        test = self.loader.loadModel("models/box")
+        test.reparentTo(self.render)
+        test.setPos(0, 10, 2)
+        test.setScale(0.5)
+
+    # read positions, move cubes visually
     def update(self, agents):
 
         print(f"[RENDER] Rendering {len(agents)} agents")
@@ -67,12 +73,27 @@ class Renderer:
             if i not in self.agent_nodes:
                 node = self.loader.loadModel("models/box")
                 node.reparentTo(self.render)
-                node.setScale(1.0,1.0,1.0)
+                node.setScale(1.2)
                 node.setColor(1,0,0,1)
+                node.setTwoSided(True)
 
                 # use index here instead of Agent object, Agent object may not be hashable
                 self.agent_nodes[i] = node
 
             # update position
             node = self.agent_nodes[i]
-            node.setPos(agent.position[0], 0, agent.position[2]+0.5)
+            node.setPos(agent.position[0], agent.position[2], 0)
+
+            # DEBUG (moved camera here instead of in init)
+            xs = [a.position[0] for a in agents]
+            zs = [a.position[2] for a in agents]
+            center_x = sum(xs) / len(xs)
+            center_z = sum(zs) / len(zs)
+            self.camera.setPos(center_x, -60, center_z + 20)
+            self.camera.lookAt(center_x, 0, center_z)
+            
+            # DEBUG - debug lines
+            # print("loaded node:", node)
+            # print("agent pos:", agent.position)
+            # print("camera:", self.camera.getPos())
+            # print("agent sample:", agents[0].position)

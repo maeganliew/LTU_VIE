@@ -20,7 +20,7 @@ class AgentSystem:
     def spawn_agents(self, count):
         for _ in range(count):
             self.agents.append(Agent((
-                random.uniform(-5, 5),
+                random.uniform(-20, 20),
                 0,
-                random.uniform(-5, 5)
+                random.uniform(-20, 20),
             )))

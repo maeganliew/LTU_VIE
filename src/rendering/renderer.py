@@ -37,26 +37,42 @@ class Renderer:
     # read positions, move cubes visually
     def update(self, agents):
 
-        print(f"[RENDER] Rendering {len(agents)} agents")
+        # print(f"[RENDER] Rendering {len(agents)} agents")
+        
+        # ZX change update() to key self.agent_nodes by agent.agent_id instead of the enumerate index i
+        # The index is unstable when agents are added, removed, or reordered, so nodes can get mismatched to the wrong agent
+        # i also remove nodes for agent IDs that no longer exist in the current frame.
+    
+        # track which agent IDs still exist this frame
+        active_agent_ids = set()
 
-        # create cubes if needed
-        for i, agent in enumerate(agents):
 
-            if i not in self.agent_nodes:
+        # create/update cubes using stable agent_id
+        for agent in agents:
+            agent_id = agent.agent_id
+            active_agent_ids.add(agent_id)
+
+            if agent_id not in self.agent_nodes:
                 node = self.loader.loadModel("models/box")
                 node.reparentTo(self.render)
                 node.setScale(1.2)
-                node.setColor(1,0,0,1)
+                node.setColor(1, 0, 0, 1)
                 node.setTwoSided(True)
+                self.agent_nodes[agent_id] = node
 
-                # use index here instead of Agent object, Agent object may not be hashable
-                self.agent_nodes[i] = node
-
-            # update position
-            node = self.agent_nodes[i]
+            node = self.agent_nodes[agent_id]
             node.setPos(agent.position[0], agent.position[2], 0)
 
-            # DEBUG (moved camera here instead of in init)
+        # remove cubes for agents that no longer exist
+        existing_ids = set(self.agent_nodes.keys())
+        removed_ids = existing_ids - active_agent_ids
+
+        for agent_id in removed_ids:
+            self.agent_nodes[agent_id].removeNode()
+            del self.agent_nodes[agent_id]
+
+        # update camera once, not inside the loop
+        if agents:
             xs = [a.position[0] for a in agents]
             zs = [a.position[2] for a in agents]
             center_x = sum(xs) / len(xs)

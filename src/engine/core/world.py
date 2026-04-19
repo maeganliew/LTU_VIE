@@ -11,8 +11,12 @@ class World:
         self.profiler = Profiler()
 
         self.agent_system.initialize_agents()
-        self.agent_system.spawn_agents(10)
-
+        
+        # simple wall of blocked cells
+        for z in range(-5, 6):
+            self.world_state.obstacles.add((5, z))
+            
+            
         self.frame_count = 0
 
     def update(self, dt):
@@ -25,10 +29,10 @@ class World:
             print(f"Agent count: {len(self.world_state.agents)}")
             print(f"Simulation update time: {self.profiler.last_update_ms:.4f} ms")
 
-            for agent in self.world_state.agents[:3]:
-                print(
-                    f"Agent {agent.agent_id}: pos={agent.position}, vel={agent.velocity}"
-                )
+            # for agent in self.world_state.agents[:3]:
+            #     print(
+            #         f"Agent {agent.agent_id}: pos={agent.position}, vel={agent.velocity}"
+            #     )
             print("-" * 40)
 
         self.frame_count += 1

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Set
 
 from src.engine.simulation.agent import AgentState
 
@@ -23,4 +23,8 @@ class WorldState:
         "pathfinding": False,
         "avoidance": True,  # avoidance logic
         "profiling": True,  #show timing info
+        "obstacles": True, #toggle obstacle handling on or off
     })
+    
+    # stores blocked cells as integer grid coordinates
+    obstacles: Set[Tuple[int, int]] = field(default_factory=set)

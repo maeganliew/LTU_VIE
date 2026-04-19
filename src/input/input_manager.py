@@ -59,11 +59,13 @@ class InputManager(DirectObject):
             print(f"[INPUT] Mouse clicked at: {self.mouse_click}")
 
     def spawn_more(self):
-        self.world_state.spawn_count += 10
+        # max 500 agents
+        self.world_state.spawn_count = min(500, self.world_state.spawn_count + 10)
         print("[INPUT] spawn_count =", self.world_state.spawn_count)
 
     def spawn_less(self):
-        self.world_state.spawn_count -= 10
+        # prevent agent reduce to negative value
+        self.world_state.spawn_count = max(0, self.world_state.spawn_count - 10)
         print("[INPUT] spawn_count =", self.world_state.spawn_count)
 
     def setup_mouse(self):

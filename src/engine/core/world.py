@@ -11,6 +11,7 @@ class World:
         self.profiler = Profiler()
 
         self.agent_system.initialize_agents()
+        self.agent_system.spawn_agents(10)
 
         self.frame_count = 0
 

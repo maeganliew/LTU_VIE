@@ -1,10 +1,10 @@
+from src.engine.simulation.agent import Agent
 import math
 import random
 
 from src.engine.simulation.agent import AgentState
 from src.engine.simulation.movement import move_towards
 from src.engine.systems.spatial_grid import SpatialGrid
-
 
 class AgentSystem:
     def __init__(self, world_state, config):
@@ -49,6 +49,13 @@ class AgentSystem:
         elif desired < current:
             self.world_state.agents = self.world_state.agents[:desired]
             
+    def spawn_agents(self, count):
+        for _ in range(count):
+            self.agents.append(Agent((
+                random.uniform(-20, 20),
+                0,
+                random.uniform(-20, 20),
+            )))
 
     def update(self, dt):
         # ensure world has correct number of agent

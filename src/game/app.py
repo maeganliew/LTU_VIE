@@ -11,11 +11,12 @@ class CrowdSimApp(ShowBase):
 
         self.world = World()
         self.input_manager = InputManager(self, self.world.world_state)
-        self.renderer = Renderer(self)
+        self.renderer = Renderer(self, self.world.world_state)
 
         self.taskMgr.add(self.update, "update")
 
     def update(self, task):
+        
         dt = globalClock.getDt()
 
         self.world.update(dt)

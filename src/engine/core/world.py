@@ -10,13 +10,18 @@ class World:
         self.agent_system = AgentSystem(self.world_state, self.config)
         self.profiler = Profiler()
 
-        self.agent_system.initialize_agents()
         
-        # simple wall of blocked cells
+        # simple vertical wall of blocked cells
         for z in range(-5, 6):
             self.world_state.obstacles.add((5, z))
             
-            
+        # small block on left
+        for x in range(-15, -12):
+            for z in range(2, 5):
+                self.world_state.obstacles.add((x, z))
+                
+        self.agent_system.initialize_agents()
+        
         self.frame_count = 0
 
     def update(self, dt):

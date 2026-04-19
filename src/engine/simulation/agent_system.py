@@ -7,7 +7,10 @@ from src.engine.systems.spatial_grid import SpatialGrid
 
 class AgentSystem:
     def __init__(self, world_state, config):
+        
+        # shared world state: agents, target, obstacles, spawn count, flags
         self.world_state = world_state
+        
         self.config = config
         self.grid = SpatialGrid(config.cell_size)
         self.next_id = 1
@@ -19,17 +22,43 @@ class AgentSystem:
 
         self.world_state.agents.clear()
 
+        # create the requested number of agents
         for _ in range(count):
             self.world_state.agents.append(self._create_random_agent())
 
+    def position_to_cell(self, position):
+        # convert floating-point world position into integer grid cell
+        x, _, z = position
+        return int(x // self.config.cell_size), int(z // self.config.cell_size)
+    
+    def is_blocked(self, position):
+        cell = self.position_to_cell(position)
+        return cell in self.world_state.obstacles
 
     def _create_random_agent(self):
-        x = random.uniform(-self.config.world_width / 2, self.config.world_width / 2)
-        z = random.uniform(-self.config.world_height / 2, self.config.world_height / 2)
+        # try multiple times to find a random free position
+        # so agents do not spawn inside obstacle cells
+        max_attempts = 200
 
+        for _ in range(max_attempts):
+            x = random.uniform(-self.config.world_width / 2, self.config.world_width / 2)
+            z = random.uniform(-self.config.world_height / 2, self.config.world_height / 2)
+            position = (x, 0.0, z)
+
+            if not self.is_blocked(position):
+                agent = AgentState(
+                    agent_id=self.next_id,
+                    position=position,
+                    target=self.world_state.target_position,
+                    speed=self.config.move_speed,
+                )
+                self.next_id += 1
+                return agent
+
+        # fallback if no free spot found
         agent = AgentState(
             agent_id=self.next_id,
-            position=(x, 0.0, z),
+            position=(0.0, 0.0, 0.0),
             target=self.world_state.target_position,
             speed=self.config.move_speed,
         )
@@ -38,6 +67,7 @@ class AgentSystem:
 
 
     def sync_spawn_count(self):
+        # ensure the actual number of agents matches world_state.spawn_count
         desired = self.world_state.spawn_count
         current = len(self.world_state.agents)
 
@@ -48,18 +78,21 @@ class AgentSystem:
         elif desired < current:
             self.world_state.agents = self.world_state.agents[:desired]
             
-    def spawn_agents(self, count):
-        for _ in range(count):
-            self.world_state.agents.append(self._create_random_agent())
             
-    # blocked-cell logic
-    def position_to_cell(self, position):
-        x, _, z = position
-        return int(x // self.config.cell_size), int(z // self.config.cell_size)
+    def relocate_if_inside_obstacle(self, agent):
+        if not self.is_blocked(agent.position):
+            return
 
-    def is_blocked(self, position):
-        cell = self.position_to_cell(position)
-        return cell in self.world_state.obstacles
+        # relocate it to a free random position.
+        max_attempts = 200
+        for _ in range(max_attempts):
+            x = random.uniform(-self.config.world_width / 2, self.config.world_width / 2)
+            z = random.uniform(-self.config.world_height / 2, self.config.world_height / 2)
+            candidate = (x, 0.0, z)
+
+            if not self.is_blocked(candidate):
+                agent.position = candidate
+                return
 
     def resolve_obstacle_collision(self, current_position, proposed_position):
         if not self.world_state.debug_flags.get("obstacles", True):
@@ -68,20 +101,21 @@ class AgentSystem:
         if not self.is_blocked(proposed_position):
             return proposed_position
 
+        # try a simple slide instead of full pathfinding
         cx, cy, cz = current_position
         px, py, pz = proposed_position
 
-        # Try sliding along x only
+        # try sliding along x only
         slide_x = (px, py, cz)
         if not self.is_blocked(slide_x):
             return slide_x
 
-        # Try sliding along z only
+        # try sliding along z only
         slide_z = (cx, py, pz)
         if not self.is_blocked(slide_z):
             return slide_z
 
-        # If both blocked, stay in place
+        # if both blocked, stay in place
         return current_position
     
     
@@ -122,6 +156,8 @@ class AgentSystem:
 
     def apply_avoidance(self, agent, proposed_position):
         px, py, pz = proposed_position
+        
+        # accumulated push-away force from nearby neighbors
         push_x = 0.0
         push_z = 0.0
 
@@ -130,7 +166,8 @@ class AgentSystem:
         for other in neighbors:
             if other.agent_id == agent.agent_id or not other.active:
                 continue
-
+            
+            # compute difference from other agent
             dx = px - other.position[0]
             dz = pz - other.position[2]
             dist_sq = dx * dx + dz * dz
@@ -140,6 +177,7 @@ class AgentSystem:
 
             distance = math.sqrt(dist_sq)
             if distance < self.config.neighbor_radius:
+                # stronger push when agents are closer
                 strength = (
                     self.config.neighbor_radius - distance
                 ) / self.config.neighbor_radius
@@ -151,6 +189,7 @@ class AgentSystem:
         return (px + push_x * 0.03, py, pz + push_z * 0.03)
 
     def clamp_to_world(self, position):
+        # keep agents inside world boundaries
         x, y, z = position
         x = max(-self.config.world_width / 2, min(x, self.config.world_width / 2))
         z = max(-self.config.world_height / 2, min(z, self.config.world_height / 2))

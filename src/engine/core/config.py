@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Config:
-    # horizontal and vertical size of world and each grid cell is 1unit wide
+    # horizontal and vertical size of world and each grid cell is 1 unit wide
     world_width: int = 40
     world_height: int = 40
     cell_size: float = 1.0

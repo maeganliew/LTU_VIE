@@ -125,13 +125,13 @@ Every agent is an instance of `AgentState` and is driven by a two-layer autonomo
 
 **Layer 1 — Flow-Field Pathfinding (NavigationField)**
 
-A single **BFS (Breadth-First Search) distance map** is computed across the entire grid whenever the player clicks a new target. Every cell in the grid receives a value representing the minimum number of steps to the target. On each simulation tick, every agent queries this map to get its next best grid cell — moving it around walls and obstacles without any per-agent A* cost.
+A single **BFS (Breadth-First Search) distance map** is computed across the entire grid whenever the player clicks a new target. Every cell in the grid receives a value representing the minimum number of steps to the target. On each simulation tick, every agent queries this map to get its next best grid cell , moving it around walls and obstacles without any per-agent A* cost.
 
 **Layer 2 — Local Avoidance (SpatialGrid)**
 
 After flow-field steering, each agent checks its neighbours using the spatial hash grid. If another agent is within `neighbor_radius`, a push-away force is applied proportional to how close the two agents are. This prevents overlap and produces natural crowd-dispersal behaviour.
 
-**Player Interaction** happens via:
+**Player Interaction** happens when:
 
 - **Left Mouse Click** — sets the shared `target_position` in `WorldState`, which triggers a flow-field rebuild on the next simulation tick. All agents immediately begin navigating toward the new target.
 - **Q / E keys** — dynamically spawns or removes agents in groups of 10 (up to 500), changing the crowd density in real time.

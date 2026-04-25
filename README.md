@@ -105,7 +105,7 @@ The engine is split into three completely independent layers that communicate on
 
 ## 3. How Assignment Requirements Are Met
 
-### Requirement 1 — 3D Graphical Representations of Objects ✅
+### Requirement 1 — 3D Graphical Representations of Objects 
 
 All objects in the simulation are rendered using **Panda3D's 3D scene graph**. The engine loads Panda3D's built-in `models/box` primitive and uses it for both agent representations and obstacle blocks. The scene includes:
 
@@ -119,7 +119,7 @@ All positions are true 3D coordinates using the `(x, y, z)` tuple format. The si
 
 ---
 
-### Requirement 2 — Autonomous Agents That You Can Interact With ✅
+### Requirement 2 — Autonomous Agents That You Can Interact With 
 
 Every agent is an instance of `AgentState` and is driven by a two-layer autonomous navigation system:
 
@@ -139,7 +139,7 @@ After flow-field steering, each agent checks its neighbours using the spatial ha
 
 ---
 
-### Requirement 3 — Amount of Objects Is Configurable and Dynamic ✅
+### Requirement 3 — Amount of Objects Is Configurable and Dynamic 
 
 The system supports dynamic agent population changes at runtime:
 
@@ -154,7 +154,7 @@ The system supports dynamic agent population changes at runtime:
 
 ---
 
-### Requirement 4 — Simulation Update Time < 16.67 ms (Excluding Rendering) ✅
+### Requirement 4 — Simulation Update Time < 16.67 ms (Excluding Rendering) 
 
 The `Profiler` class wraps the `AgentSystem.update()` call using `time.perf_counter()` (nanosecond-precision timer) and records the elapsed time in milliseconds as `last_update_ms`.
 

@@ -263,11 +263,11 @@ Budget violations:  0
 
 | Agent Count | Last Frame (ms) | 60-Frame Average (ms) | Peak (ms) | Within Budget |
 |---|---|---|---|---|
-| 10 | ~0.15 | ~0.14 | ~0.25 |  
-| 50 | ~0.45 | ~0.43 | ~0.70 |  
-| 100 | ~0.90 | ~0.87 | ~1.20 | 
-| 200 | ~1.85 | ~1.76 | ~2.10 | 
-| 500 | ~4.60 | ~4.35 | ~5.80 | 
+| 10 | ~0.15 | ~0.14 | ~0.25 | Yes |  
+| 50 | ~0.45 | ~0.43 | ~0.70 | Yes |  
+| 100 | ~0.90 | ~0.87 | ~1.20 | Yes |   
+| 200 | ~1.85 | ~1.76 | ~2.10 | Yes |  
+| 500 | ~4.60 | ~4.35 | ~5.80 | Yes |  
 
 The engine maintains its budget at all supported agent counts thanks to the spatial hash grid (eliminating O(n²) avoidance comparisons) and the lazy flow-field rebuild (eliminating per-frame BFS cost when the target is stationary).
 

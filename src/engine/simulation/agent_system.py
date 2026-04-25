@@ -238,11 +238,14 @@ class AgentSystem:
                 continue
 
             distance = math.sqrt(dist_sq)
-            if distance < self.config.neighbor_radius:
+            
+            # use the actual physical size of both agents to decide when to push
+            # combined_radius = how close they can be before touching
+            combined_radius = agent.radius + other.radius
+            
+            if distance < combined_radius:
                 # stronger push when agents are closer
-                strength = (
-                    self.config.neighbor_radius - distance
-                ) / self.config.neighbor_radius
+                strength = (combined_radius - distance) / combined_radius
                 
                 # push away from the neighbor in the outwards direction
                 push_x += (dx / distance) * strength * self.config.avoidance_strength

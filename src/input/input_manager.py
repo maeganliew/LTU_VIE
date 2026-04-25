@@ -10,22 +10,15 @@ class InputManager(DirectObject):
         self.world_state = world_state
         self.base = base
 
-        print("[INPUT] InputManager initialized")
-
         # Store state
         self.keys = {}
-        self.mouse_click = None
 
+        print("[INPUT] InputManager initialized")
+        
         # Setup listeners
         self.setup_key_listeners()
-        self.setup_mouse_listeners()
+        self.setup_control_bindings()
 
-        # Bind keys, q means 10 more agents, e means 10 less agents
-        self.base.accept("q", self.spawn_more)
-        self.base.accept("e", self.spawn_less)
-
-        # can click to set target position
-        self.base.accept("mouse1", self.on_click)
 
     def setup_key_listeners(self):
         # Example keys
@@ -39,9 +32,16 @@ class InputManager(DirectObject):
         self.accept("s-up", self.on_key_up, ["s"])
         self.accept("a-up", self.on_key_up, ["a"])
         self.accept("d-up", self.on_key_up, ["d"])
+        
+    def setup_control_bindings(self):
+        self.accept("q", self.spawn_more)
+        self.accept("e", self.spawn_less)
+        self.accept("mouse1", self.on_click)
 
-    def setup_mouse_listeners(self):
-        self.accept("mouse1", self.on_mouse_click)
+        self.accept("p", self.toggle_pathfinding)
+        self.accept("o", self.toggle_obstacles)
+        self.accept("v", self.toggle_avoidance)
+
 
     def on_key_down(self, key):
         self.keys[key] = True
@@ -50,13 +50,6 @@ class InputManager(DirectObject):
     def on_key_up(self, key):
         self.keys[key] = False
         print(f"[INPUT] Key released: {key}")
-
-    def on_mouse_click(self):
-        if base.mouseWatcherNode.hasMouse():
-            mouse_pos = base.mouseWatcherNode.getMouse()
-            self.mouse_click = (mouse_pos.getX(), mouse_pos.getY())
-
-            print(f"[INPUT] Mouse clicked at: {self.mouse_click}")
 
     def spawn_more(self):
         # max 500 agents
@@ -67,9 +60,21 @@ class InputManager(DirectObject):
         # prevent agent reduce to negative value
         self.world_state.spawn_count = max(0, self.world_state.spawn_count - 10)
         print("[INPUT] spawn_count =", self.world_state.spawn_count)
+        
+    def toggle_pathfinding(self):
+        current = self.world_state.debug_flags.get("pathfinding", True)
+        self.world_state.debug_flags["pathfinding"] = not current
+        print("[INPUT] pathfinding =", self.world_state.debug_flags["pathfinding"])
 
-    def setup_mouse(self):
-        self.base.accept("mouse1", self.on_click)
+    def toggle_obstacles(self):
+        current = self.world_state.debug_flags.get("obstacles", True)
+        self.world_state.debug_flags["obstacles"] = not current
+        print("[INPUT] obstacles =", self.world_state.debug_flags["obstacles"])
+
+    def toggle_avoidance(self):
+        current = self.world_state.debug_flags.get("avoidance", True)
+        self.world_state.debug_flags["avoidance"] = not current
+        print("[INPUT] avoidance =", self.world_state.debug_flags["avoidance"])
 
     def on_click(self):
         print("[MOUSE] click detected")

@@ -11,7 +11,7 @@ class CrowdSimApp(ShowBase):
 
         self.world = World()
         self.input_manager = InputManager(self, self.world.world_state)
-        self.renderer = Renderer(self, self.world.world_state)
+        self.renderer = Renderer(self)
 
         self.taskMgr.add(self.update, "update")
 
@@ -21,6 +21,11 @@ class CrowdSimApp(ShowBase):
 
         self.world.update(dt)
 
-        self.renderer.update(self.world.world_state.agents)
+        self.renderer.update(
+            self.world.world_state.agents,
+            self.world.world_state,
+            self.world.profiler.last_update_ms,
+        )
+
 
         return task.cont

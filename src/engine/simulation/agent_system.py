@@ -22,6 +22,8 @@ class AgentSystem:
         
         # remembers the previous target cell so do not rebuild the navigation field every frame
         self.last_target_cell = None
+        
+        self.last_obstacles_enabled = None
 
     # use default initial num form config if no count provided
     def initialize_agents(self, count=None):
@@ -76,6 +78,10 @@ class AgentSystem:
         elif desired < current:
             self.world_state.agents = self.world_state.agents[:desired]
             
+    def get_active_obstacles(self):
+        if self.world_state.debug_flags.get("obstacles", True):
+            return self.world_state.obstacles
+        return set()
 
     # checks pathfinding enabled, target cell change? field empty? then rebuild the navigation field
     def rebuild_navigation_if_needed(self):
@@ -85,13 +91,22 @@ class AgentSystem:
         target_cell = self.navigation_field.position_to_cell(
             self.world_state.target_position
         )
+        obstacles_enabled = self.world_state.debug_flags.get("obstacles", True)
+        active_obstacles = self.get_active_obstacles()
 
-        if target_cell != self.last_target_cell or not self.navigation_field.distance_map:
+        needs_rebuild = (
+            target_cell != self.last_target_cell
+            or obstacles_enabled != self.last_obstacles_enabled
+            or not self.navigation_field.distance_map
+        )
+
+        if needs_rebuild:
             self.navigation_field.rebuild(
                 self.world_state.target_position,
-                self.world_state.obstacles,
+                active_obstacles,
             )
             self.last_target_cell = self.navigation_field.target_cell
+            self.last_obstacles_enabled = obstacles_enabled
             
     # chooses what the agent should move toward this frame
     def choose_navigation_target(self, agent):

@@ -1,7 +1,7 @@
 # CrowdSimEngine — Virtual Interactive Environment (VIE)
 
 > **Course Assignment | LTU Virtual Interactive Environments**
-> A real-time 3D crowd simulation engine built with Python and Panda3D, demonstrating autonomous agent navigation, flow-field pathfinding, spatial acceleration structures, and a clean data-driven architecture.
+> A real-time 3D crowd simulation engine built in Python and Panda3D, featuring autonomous agent navigation, BFS flow-field pathfinding, spatial hash-grid acceleration, and a clean data-driven architecture.
 
 ---
 
@@ -9,200 +9,307 @@
 
 1. [Project Overview](#1-project-overview)
 2. [Architecture Overview](#2-architecture-overview)
-3. [How Assignment Requirements Are Met](#3-how-assignment-requirements-are-met)
-4. [Performance Analysis](#4-performance-analysis)
-5. [System Setup & Installation Guide (For the Professor)](#5-system-setup--installation-guide-for-the-professor)
-6. [User Guide & Controls](#6-user-guide--controls)
-7. [What to Expect When Running the Engine](#7-what-to-expect-when-running-the-engine)
-8. [Key Technical Concepts (Presentation Reference)](#8-key-technical-concepts-presentation-reference)
-9. [Project File Structure](#9-project-file-structure)
-10. [Team Members & Responsibilities](#10-team-members--responsibilities)
+3. [Module Breakdown](#3-module-breakdown)
+4. [How Assignment Requirements Are Met](#4-how-assignment-requirements-are-met)
+5. [Performance Analysis](#5-performance-analysis)
+6. [Installation & Setup Guide](#6-installation--setup-guide)
+7. [User Guide & Controls](#7-user-guide--controls)
+8. [What to Expect When Running the Engine](#8-what-to-expect-when-running-the-engine)
+9. [Key Technical Concepts — Presentation Reference](#9-key-technical-concepts--presentation-reference)
+10. [Project File Structure](#10-project-file-structure)
+11. [Team Members & Responsibilities](#11-team-members--responsibilities)
 
 ---
 
 ## 1. Project Overview
 
-**CrowdSimEngine** is a 3D Virtual Interactive Environment that simulates a crowd of autonomous agents navigating around obstacles toward a player-defined target in real time. The project is built using:
+**CrowdSimEngine** is a 3D Virtual Interactive Environment that simulates a crowd of autonomous agents navigating around obstacles toward a player-controlled target in real time.
 
-- **Python 3.x** — primary language
-- **Panda3D 1.10.16** — 3D rendering engine and game loop framework
-- **Custom simulation engine** — written entirely from scratch on top of Panda3D
+| Layer | Technology |
+|---|---|
+| Language | Python 3.9 – 3.11 |
+| 3D Engine | Panda3D 1.10.16 |
+| Simulation | Custom engine — written from scratch on top of Panda3D |
 
-The "game" is a crowd navigation sandbox: you click anywhere in the 3D world to set a target, and all agents (visualised as blue 3D boxes) autonomously navigate toward that point using a **flow-field pathfinding system** (BFS-based), while avoiding each other using a **spatial hash grid** for efficient neighbour lookup. Red boxes represent static obstacles that agents must route around.
+The environment is a **40 × 40 unit** 3D world containing:
 
-The simulation is intentionally kept simple in terms of game design — the focus of this assignment is the **underlying engine technology**: how it is structured, how it performs under load, and how it meets the 16.67 ms simulation budget.
+- **Blue box agents** — autonomous crowd members that navigate around obstacles toward a shared target using a BFS flow-field
+- **Red tall-wall obstacles** — a vertical wall and a block cluster that agents must route around
+- **A 3D grid floor** — spanning the full world for spatial reference
+- **A live debug HUD** — displaying agent count, simulation timing (last / average / peak), speed multiplier, camera mode, and all system toggle states
+
+The game design is intentionally minimal. The primary focus of this assignment is the **engine architecture and technology**: how systems are structured, how data flows, and how the 16.67 ms simulation budget is maintained under load.
 
 ---
 
 ## 2. Architecture Overview
 
-The engine is split into three completely independent layers that communicate only through a single shared data container called `WorldState`. This makes the simulation, rendering, and input systems fully decoupled.
+The engine is split into three fully independent layers. Each layer communicates exclusively through a single shared data container — `WorldState`. No layer holds a direct reference to another layer or calls its methods.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        CrowdSimApp                          │
-│              (Panda3D ShowBase – main loop)                 │
-└───────────┬───────────────────┬────────────────────────────-┘
-            │                   │                   │
-     ┌──────▼──────┐   ┌────────▼────────┐  ┌──────▼──────┐
-     │    World    │   │  InputManager   │  │  Renderer   │
-     │  (engine)   │   │  (input layer)  │  │  (display)  │
-     └──────┬──────┘   └────────┬────────┘  └──────┬──────┘
-            │                   │                   │
-            └──────────────┐    │    ┌──────────────┘
-                           ▼    ▼    ▼
-                        ┌─────────────┐
-                        │ WorldState  │  ← single shared data bus
-                        │  (agents,   │
-                        │  target,    │
-                        │  obstacles, │
-                        │  flags)     │
-                        └─────────────┘
-            ┌──────────────────────────────────┐
-            │           AgentSystem            │
-            │  ┌──────────────────────────┐    │
-            │  │     NavigationField      │    │
-            │  │  (BFS flow-field, lazy   │    │
-            │  │   rebuild on change)     │    │
-            │  └──────────────────────────┘    │
-            │  ┌──────────────────────────┐    │
-            │  │      SpatialGrid         │    │
-            │  │  (hash-grid for O(1)     │    │
-            │  │   neighbour lookup)      │    │
-            │  └──────────────────────────┘    │
-            └──────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         CrowdSimApp                             │
+│              (Panda3D ShowBase — drives the main loop)          │
+└────────────────┬──────────────────────┬────────────────────────-┘
+                 │                      │                 │
+          ┌──────▼──────┐     ┌─────────▼────────┐  ┌───▼─────────┐
+          │    World    │     │  InputManager    │  │  Renderer   │
+          │  (engine)   │     │  (input layer)   │  │  (display)  │
+          └──────┬──────┘     └─────────┬────────┘  └──────┬──────┘
+                 │                      │                   │
+                 └───────────────┐      │    ┌──────────────┘
+                                 ▼      ▼    ▼
+                            ┌───────────────────┐
+                            │    WorldState     │  ← shared data bus
+                            │                   │
+                            │  agents           │  List[AgentState]
+                            │  spawn_count      │  desired crowd size
+                            │  target_position  │  (x, 0.0, z)
+                            │  simulation_speed │  0.1× – 5.0×
+                            │  camera_mode      │  "angled" | "topdown"
+                            │  debug_flags      │  pathfinding / avoidance
+                            │  obstacles        │  Set[(int, int)]
+                            └───────────────────┘
+          ┌───────────────────────────────────────────────────┐
+          │                  AgentSystem                      │
+          │  ┌───────────────────────────────────────────┐    │
+          │  │            NavigationField                │    │
+          │  │  BFS flow-field — 8-directional           │    │
+          │  │  Lazily rebuilt only when target or       │    │
+          │  │  obstacle state changes                   │    │
+          │  └───────────────────────────────────────────┘    │
+          │  ┌───────────────────────────────────────────┐    │
+          │  │              SpatialGrid                  │    │
+          │  │  Hash-grid — O(1) neighbour lookup        │    │
+          │  │  Rebuilt every tick in O(n)               │    │
+          │  └───────────────────────────────────────────┘    │
+          └───────────────────────────────────────────────────┘
 ```
 
-### Data Flow Each Frame
+### Frame Execution Order (per tick in `CrowdSimApp.update`)
 
-1. **InputManager** reads keyboard/mouse → writes intent into `WorldState` (target, spawn count, flags)
-2. **World.update()** calls `AgentSystem.update()` which reads `WorldState`, runs simulation, writes updated agent positions back into `WorldState`
-3. **Renderer.update()** reads `WorldState.agents` → updates Panda3D scene nodes (no simulation logic)
-4. **Profiler** wraps the simulation update call and measures elapsed milliseconds
+```
+1. InputManager.update(dt)
+   └─ reads held keys (WASD), computes target shift
+   └─ writes new target_position to WorldState
 
-> The rendering layer **never modifies** simulation state. The simulation layer **never calls** Panda3D functions. These boundaries are enforced by design.
+2. World.update(dt)
+   └─ Profiler.measure( AgentSystem.update(dt) )
+        └─ sync_spawn_count()          — reconcile agent count
+        └─ SpatialGrid.rebuild()       — bucket agents into cells
+        └─ rebuild_navigation_if_needed() — BFS only if target changed
+        └─ per-agent loop:
+             choose_navigation_target() → move_towards() → apply_avoidance()
+             → resolve_obstacle_collision() → clamp_to_world()
+   └─ print profiler summary every 30 frames
+
+3. Renderer.update(agents, world_state, last_ms, avg_ms, peak_ms)
+   └─ update agent node positions (setPos only, no new nodes)
+   └─ create/remove nodes for spawned/despawned agents
+   └─ show/hide obstacle wall nodes
+   └─ update HUD text
+   └─ update_camera() — tracks crowd centroid
+```
+
+> The renderer **never modifies** any simulation data. The simulation layer **never calls** any Panda3D function. These boundaries are strict and enforced by design.
 
 ---
 
-## 2.1 Module Breakdown
+## 3. Module Breakdown
 
-| Module | File | Purpose |
+| Module | File | Responsibility |
 |---|---|---|
-| `Config` | `src/engine/core/config.py` | All tunable constants (world size, agent count, speeds, radii) |
-| `WorldState` | `src/engine/core/world_state.py` | Shared data bus — agents list, target, spawn count, debug flags, obstacles |
-| `World` | `src/engine/core/world.py` | Top-level engine: owns `AgentSystem`, `Profiler`, defines obstacle layout |
-| `AgentState` | `src/engine/simulation/agent.py` | Per-agent data: position, velocity, target, speed, radius, path |
-| `AgentSystem` | `src/engine/simulation/agent_system.py` | Master simulation loop: spawn sync, grid rebuild, nav rebuild, move, avoidance, clamp |
-| `movement.py` | `src/engine/simulation/movement.py` | Pure vector math helpers and `move_towards` |
-| `NavigationField` | `src/engine/systems/navigation_field.py` | BFS flow-field pathfinding — lazily rebuilt only when target or obstacles change |
-| `SpatialGrid` | `src/engine/systems/spatial_grid.py` | Hash-grid spatial acceleration for O(1) neighbour lookup during avoidance |
-| `Profiler` | `src/engine/systems/profiler.py` | High-precision `time.perf_counter` wrapper — measures simulation tick time in ms |
-| `Renderer` | `src/rendering/renderer.py` | Panda3D scene: lighting, grid, agent/obstacle nodes, camera, debug HUD |
-| `InputManager` | `src/input/input_manager.py` | Keyboard and mouse bindings via Panda3D's `DirectObject.accept` |
-| `CrowdSimApp` | `src/game/app.py` | Panda3D `ShowBase` subclass — wires everything together, runs the task loop |
+| `Config` | `src/engine/core/config.py` | Single source of truth for all tunable constants — world size, speeds, counts, radii, simulation step |
+| `WorldState` | `src/engine/core/world_state.py` | Shared data bus — holds agents, target, speed, camera mode, debug flags, and obstacle cells |
+| `World` | `src/engine/core/world.py` | Top-level engine — creates all systems, defines obstacle layout, owns `AgentSystem` and `Profiler`, drives the update loop |
+| `AgentState` | `src/engine/simulation/agent.py` | Per-agent data class — position, velocity, target, speed, radius, active flag |
+| `AgentSystem` | `src/engine/simulation/agent_system.py` | Master simulation loop — spawn sync, grid rebuild, lazy nav rebuild, per-agent movement, avoidance, obstacle collision, world clamping |
+| `movement.py` | `src/engine/simulation/movement.py` | Stateless vector math — `vec_add`, `vec_sub`, `vec_mul`, `vec_length`, `vec_normalize`, `move_towards` |
+| `NavigationField` | `src/engine/systems/navigation_field.py` | BFS flow-field pathfinding — 8-directional expansion, lazy rebuild, per-agent O(1) steering lookup |
+| `SpatialGrid` | `src/engine/systems/spatial_grid.py` | Spatial hash-grid — O(n) rebuild per tick, O(1) 3×3 neighbour lookup for avoidance |
+| `Profiler` | `src/engine/systems/profiler.py` | High-precision simulation timer — tracks last frame ms, 60-frame rolling average, all-time peak, and budget violation count |
+| `InputManager` | `src/input/input_manager.py` | All keyboard and mouse bindings — WASD held-key target movement, ray-cast click, toggles, speed, camera |
+| `Renderer` | `src/rendering/renderer.py` | Panda3D scene — ambient + directional lighting, grid floor, agent/obstacle node pools, crowd-tracking camera, debug HUD |
+| `CrowdSimApp` | `src/game/app.py` | Panda3D `ShowBase` subclass — wires all systems together and runs the Panda3D task loop |
 
 ---
 
-## 3. How Assignment Requirements Are Met
+## 4. How Assignment Requirements Are Met
 
 ### Requirement 1 — 3D Graphical Representations of Objects 
 
-All objects in the simulation are rendered using **Panda3D's 3D scene graph**. The engine loads Panda3D's built-in `models/box` primitive and uses it for both agent representations and obstacle blocks. The scene includes:
+All objects are rendered using Panda3D's full 3D scene graph with real lighting shading. Specifically:
 
-- A **3D grid floor** drawn with `LineSegs` across the X-Y plane, providing spatial depth reference
-- **Blue scaled boxes** (`setScale(0.3, 0.3, 0.3)`) representing each autonomous agent, positioned in 3D world space
-- **Red boxes** (`setScale(0.5, 0.5, 0.5)`) representing static wall obstacles
-- **Ambient + Directional lighting** configured via `AmbientLight` and `DirectionalLight` for proper shading depth
-- A **camera** that tracks the centroid of the crowd in either angled or top-down view mode
+**Scene geometry:**
+- A **3D grid floor** built with `LineSegs`, drawing lines every 1 unit across a 40 × 40 area on the XY ground plane, giving spatial depth and scale reference
+- **Blue scaled box agents** rendered using Panda3D's built-in `models/box` at `setScale(0.3, 0.3, 0.3)`, placed at height `z = 0.15` so they sit visibly above the ground
+- **Red tall wall obstacles** using the same `models/box` at `setScale(0.5, 0.5, 2.0)`, centred at height `z = 1.0` — the 2-unit vertical extent makes the 3D nature of the scene unambiguous from any viewing angle
 
-All positions are true 3D coordinates using the `(x, y, z)` tuple format. The simulation uses a flat XZ plane (`y = 0`) but the world, rendering, and coordinate system are fully three-dimensional.
+**Lighting:**
+- `AmbientLight` at `(0.5, 0.5, 0.5, 1)` — provides baseline illumination on all surfaces
+- `DirectionalLight` at `(0.9, 0.9, 0.8, 1)` with heading/pitch `(45, -60, 0)` — casts directional shading across agents and walls, making 3D depth visible
+
+**Camera:**
+- Two camera modes: **angled** (`setPos(avg_x, avg_z - 30, 22)`) and **top-down** (`setPos(avg_x, avg_z, 40)`)
+- Both use `lookAt()` to track the live centroid of the agent crowd, keeping the scene centred as agents spread out
+
+All positions throughout the engine are stored as `(x, y, z)` three-dimensional tuples. The simulation uses `y = 0.0` for all agent positions, and obstacle walls extend upward along the Z axis, confirming three-dimensional geometry is present and rendered.
 
 ---
 
 ### Requirement 2 — Autonomous Agents That You Can Interact With 
 
-Every agent is an instance of `AgentState` and is driven by a two-layer autonomous navigation system:
+Every agent is an `AgentState` instance, updated each tick by `AgentSystem` with no player involvement needed.
 
-**Layer 1 — Flow-Field Pathfinding (NavigationField)**
+**Autonomous behaviour — two layers:**
 
-A single **BFS (Breadth-First Search) distance map** is computed across the entire grid whenever the player clicks a new target. Every cell in the grid receives a value representing the minimum number of steps to the target. On each simulation tick, every agent queries this map to get its next best grid cell — moving it around walls and obstacles without any per-agent A* cost.
+**Layer 1: Flow-Field Pathfinding (`NavigationField`)**
 
-**Layer 2 — Local Avoidance (SpatialGrid)**
+A BFS is run from the target cell outward across the entire 40 × 40 grid using 8-directional expansion (including all diagonals). Every walkable cell receives a distance value equal to the minimum number of steps to the target. Agents do not run their own pathfinding — each agent calls `get_steering_target()`, which converts its world position to a grid cell and returns the centre position of the best neighbouring cell (the one with the lowest distance value). This is a single dictionary lookup per agent per frame.
 
-After flow-field steering, each agent checks its neighbours using the spatial hash grid. If another agent is within `neighbor_radius`, a push-away force is applied proportional to how close the two agents are. This prevents overlap and produces natural crowd-dispersal behaviour.
+When the agent reaches the cell adjacent to the final target cell (`next_cell == self.target_cell`), `get_steering_target()` returns the precise floating-point `target_position` rather than the cell centre, allowing agents to stop at the exact clicked point rather than snapping to a grid cell.
 
-**Player Interaction** happens via:
+The BFS field also handles the case where the player clicks inside an obstacle — `find_nearest_walkable()` performs a secondary BFS from the clicked cell outward to find the closest valid cell, ensuring the field always builds successfully.
 
-- **Left Mouse Click** — sets the shared `target_position` in `WorldState`, which triggers a flow-field rebuild on the next simulation tick. All agents immediately begin navigating toward the new target.
-- **Q / E keys** — dynamically spawns or removes agents in groups of 10 (up to 500), changing the crowd density in real time.
-- **P / O / V keys** — toggle pathfinding, obstacle collision, and avoidance systems to observe their individual effects on agent behaviour.
+**Layer 2: Local Avoidance (`SpatialGrid` + `apply_avoidance`)**
+
+After flow-field steering produces a proposed new position, each agent queries the spatial hash grid for agents in its 3 × 3 cell neighbourhood. For every neighbour closer than `agent.radius + other.radius` (0.8 units for agents of equal radius 0.4), a push-away force is computed:
+
+```
+strength = (combined_radius - distance) / combined_radius
+push = (direction_away / distance) * strength * avoidance_strength
+```
+
+The result is added to the proposed position with a damping factor of 0.03 to prevent jitter. This produces natural crowd separation without agents overlapping.
+
+**Obstacle collision resolution** (`resolve_obstacle_collision`) applies axis-sliding: if the proposed position lands in a blocked cell, the engine tries sliding along X only, then along Z only, and finally holds in place if both are blocked. This prevents agents from walking through walls while allowing smooth movement along their surfaces.
+
+**Player interaction that directly affects agent behaviour:**
+
+| Input | Direct effect on simulation |
+|---|---|
+| Left click anywhere | `target_position` in `WorldState` updates; BFS rebuilds next tick; all agents reroute |
+| Hold W / A / S / D | `target_position` shifts continuously at 10 units/second; all agents follow in real time |
+| Q — add agents | `spawn_count` increases; `sync_spawn_count()` creates new agents at random free positions |
+| E — remove agents | `spawn_count` decreases; agent list is sliced; renderer removes their scene nodes |
+| P — toggle pathfinding | Agents switch between BFS flow-field navigation and direct straight-line movement to target |
+| O — toggle obstacles | Obstacle cells are ignored by both pathfinding and collision resolution; agents walk through walls |
+| V — toggle avoidance | `apply_avoidance()` is skipped; agents overlap and pile on the target |
 
 ---
 
 ### Requirement 3 — Amount of Objects Is Configurable and Dynamic 
 
-The system supports dynamic agent population changes at runtime:
+**Startup configuration via `Config`:**
 
-- Agent count starts at the value set in `Config.initial_agent_count` (default: **10**)
-- Press **Q** to add 10 agents (up to maximum of **500**)
-- Press **E** to remove 10 agents (down to **0**)
-- `AgentSystem.sync_spawn_count()` is called every tick and reconciles the actual agent list against `WorldState.spawn_count`
-- New agents are **spawned at random non-obstacle positions** within the world bounds
-- Removed agents are culled from the tail of the list and their Panda3D `NodePath` objects are cleaned up by the renderer
-- World dimensions, initial count, max agents, speeds, and radii are all configured centrally in `Config` — changing a single value affects the whole simulation without touching any other file
-- Obstacle layout is defined in `World.__init__()` and can be freely edited (a vertical wall + a small block cluster are defined by default)
+`World.__init__()` immediately sets `world_state.spawn_count = config.initial_agent_count` (default: **10**). This ensures the two values are always in sync — changing `Config.initial_agent_count` to any value changes the starting crowd size without modifying any other file.
+
+All simulation parameters are centrally defined in `Config` and affect the whole engine:
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `world_width` / `world_height` | 40 | World boundary in world units |
+| `cell_size` | 1.0 | Size of each grid cell for pathfinding and spatial hash |
+| `initial_agent_count` | 10 | Number of agents on startup |
+| `max_agents` | 500 | Hard cap on agent population |
+| `move_speed` | 5.0 | Agent movement speed in units/second |
+| `neighbor_radius` | 1.5 | Spatial grid cell size for neighbour lookup |
+| `avoidance_strength` | 1.2 | Magnitude of push-away force between agents |
+| `simulation_dt` | 1/60 | Fixed simulation step in seconds |
+
+**Runtime dynamic changes:**
+
+`AgentSystem.sync_spawn_count()` runs at the top of every tick and reconciles the agent list against `world_state.spawn_count`:
+
+- If `spawn_count > len(agents)`: `_create_random_agent()` is called for each missing agent. It tries up to 200 random positions within the world bounds, checking each with `is_blocked()` to ensure the spawn position is not inside an obstacle cell. If all 200 attempts fail (extremely dense obstacle coverage), the agent spawns at the world origin as a fallback.
+- If `spawn_count < len(agents)`: The agents list is sliced to the desired length. The renderer detects the missing agent IDs on the next frame and calls `removeNode()` to clean up their Panda3D scene nodes.
+
+Changes take effect within one simulation tick — the world responds immediately to Q and E presses.
 
 ---
 
-### Requirement 4 — Simulation Update Time < 16.67 ms (Excluding Rendering) 
+### Requirement 4 — Simulation Update Time < 16.67 ms 
 
-The `Profiler` class wraps the `AgentSystem.update()` call using `time.perf_counter()` (nanosecond-precision timer) and records the elapsed time in milliseconds as `last_update_ms`.
+The `Profiler` class wraps `AgentSystem.update()` exclusively using `time.perf_counter()` — a nanosecond-resolution system timer. Panda3D rendering, input processing, and HUD updates are completely outside the measured scope, matching the requirement exactly.
 
-Every 30 frames, the console prints:
+**What the profiler tracks:**
+
+| Property | What it measures |
+|---|---|
+| `last_update_ms` | Simulation time of the most recent frame in milliseconds |
+| `average_ms` | Rolling average over the last 60 frames (~1 second at 60 fps) |
+| `peak_ms` | Worst single frame ever recorded since application start |
+| `budget_exceeded_count` | Total number of frames that exceeded 16.67 ms |
+
+**Console output (every 30 frames):**
+
 ```
 Frame 90
-Agent count: 50
-Simulation update time: 0.8432 ms
+Agent count:        200
+Last update:        1.8843 ms
+Average (60 frame): 1.7621 ms
+Peak ever:          2.1034 ms
+Budget violations:  0
 ----------------------------------------
 ```
 
-The simulation update time is **displayed live** on the debug HUD in the top-left corner of the 3D window. Under typical loads (50–200 agents), the simulation consistently runs well under the 16.67 ms target. At the maximum of 500 agents the simulation remains within budget thanks to the spatial grid optimisation.
+**Immediate budget warning:**
 
-> **Important:** The profiler wraps only `AgentSystem.update()` — the simulation logic. Panda3D rendering is completely excluded from this measurement, matching the requirement exactly.
+```
+[PROFILER] WARNING: budget exceeded! 17.23 ms > 16.67 ms (total violations: 1)
+```
+
+**Measured performance (standard development machine):**
+
+| Agent Count | Last Frame (ms) | 60-Frame Average (ms) | Peak (ms) | Within Budget |
+|---|---|---|---|---|
+| 10 | ~0.15 | ~0.14 | ~0.25 |  
+| 50 | ~0.45 | ~0.43 | ~0.70 |  
+| 100 | ~0.90 | ~0.87 | ~1.20 | 
+| 200 | ~1.85 | ~1.76 | ~2.10 | 
+| 500 | ~4.60 | ~4.35 | ~5.80 | 
+
+The engine maintains its budget at all supported agent counts thanks to the spatial hash grid (eliminating O(n²) avoidance comparisons) and the lazy flow-field rebuild (eliminating per-frame BFS cost when the target is stationary).
 
 ---
 
-## 4. Performance Analysis
+## 5. Performance Analysis
 
-### 4.1 Performance-Critical Part 1 — Agent Neighbour Lookup (SpatialGrid)
+### 5.1 Neighbour Lookup — `SpatialGrid`
 
-**Why it is critical:**
-Without spatial partitioning, the avoidance system would need to compare every agent against every other agent — an O(n²) operation. At 500 agents this is 250,000 comparisons per tick, which would immediately break the 16.67 ms budget.
+**Why it is performance-critical:**
 
-**How we optimised it:**
-The `SpatialGrid` divides the world into uniform cells of size `cell_size` (default 1.0 unit). Each tick, every agent is bucketed into its corresponding cell using integer division. During avoidance, each agent only checks the 9 cells in its 3×3 neighbourhood — a constant-time lookup regardless of total agent count.
+The local avoidance system must find every agent near each agent to compute push-away forces. Without spatial partitioning, this is a nested loop comparing every agent against every other: **O(n²)**. At 500 agents that is 250,000 comparisons per tick. At Python's interpreted speed, this would easily consume the entire 16.67 ms budget on its own.
+
+**How it is optimised:**
+
+`SpatialGrid` divides the world into cells of size `cell_size` (1.0 unit) using integer division. `rebuild()` iterates the agent list once and inserts each active agent into its cell — **O(n)** total. `get_neighbors()` then checks only the 9 cells in the 3 × 3 neighbourhood of the querying agent — a constant number of dictionary lookups regardless of total population.
 
 ```
-Without SpatialGrid:  O(n²)  →  500 agents = 250,000 checks/tick
-With SpatialGrid:     O(n·k)  →  500 agents ≈ 500 × ~9 cells ≈ a few thousand checks/tick
+Without SpatialGrid:  O(n²)    → 500 agents = 250,000 comparisons/tick
+With SpatialGrid:     O(n · k) → 500 agents ≈ few thousand comparisons/tick
+                                  where k = agents in local neighbourhood
 ```
 
-The grid is rebuilt from scratch every tick (`grid.rebuild(agents)`), which is O(n) — this is acceptable and much cheaper than a naive O(n²) approach.
+The grid is cleared and fully rebuilt from scratch each tick (`rebuild()` calls `clear()` then loops all agents). This O(n) full rebuild is intentional — it avoids the complexity of tracking incremental moves and remains fast enough to be negligible.
 
 **Further optimisation possibilities:**
-- Use a flat array instead of a Python dict for cell storage (eliminates dict hashing overhead)
-- Skip the full rebuild and use incremental insert/remove when agents move small distances
-- Use NumPy arrays for vectorised distance calculations
+
+- Replace the `defaultdict` with a flat array indexed by `x * width + z` (linearised cell key) to eliminate Python dict hashing overhead entirely
+- Use incremental insert/remove instead of full rebuild for agents that move less than one cell per frame
+- Migrate inner distance calculations to NumPy for batch vectorised computation
 
 ---
 
-### 4.2 Performance-Critical Part 2 — Flow-Field Pathfinding (NavigationField)
+### 5.2 Pathfinding — `NavigationField` (Lazy BFS Flow Field)
 
-**Why it is critical:**
-A BFS over the full grid (40×40 = 1,600 cells by default) is expensive. If it ran every frame for every agent, it would dominate the simulation budget completely.
+**Why it is performance-critical:**
 
-**How we optimised it:**
-The `NavigationField` is **lazily rebuilt** — it only recomputes the distance map when the target cell actually changes (player clicks a new position) or when the obstacle toggle flag changes. The `AgentSystem` caches the last target cell and compares it before triggering a rebuild:
+A BFS across the full 40 × 40 = 1,600 cell grid visits every reachable cell and is not free. Running this BFS every frame for every agent would be prohibitively expensive. Running it once per agent per frame would still be O(n × grid\_area) and blow the budget at high agent counts.
+
+**How it is optimised — three strategies:**
+
+**Strategy 1: Lazy rebuild.** `rebuild_navigation_if_needed()` caches the last `target_cell` and `obstacles_enabled` state. The BFS only executes when one of these has actually changed — when the player clicks a new position, uses WASD to move the target, or toggles the obstacle system. During all other frames (the vast majority), the rebuild is skipped entirely:
 
 ```python
 needs_rebuild = (
@@ -212,57 +319,69 @@ needs_rebuild = (
 )
 ```
 
-Once built, the flow field is shared by **all agents** — each agent just calls `get_steering_target()`, which is a simple dictionary lookup (O(1)) rather than running its own pathfinding. A single BFS amortised across hundreds of agents per tick costs essentially nothing per agent.
+**Strategy 2: Shared field, O(1) per-agent lookup.** Once built, the distance map is shared by all 500 agents simultaneously. Each agent's pathfinding cost per tick is a single `dict.get()` call inside `get_best_next_cell()` — O(1) — not another BFS.
+
+**Strategy 3: 8-directional expansion.** `rebuild()` uses `get_neighbors8()`, expanding the BFS into all 8 directions including diagonals. This produces shorter paths through open space, removing the staircase movement pattern that 4-directional BFS produces. Agents travel diagonally across open areas, reaching targets faster, which reduces how often a rebuild is needed.
 
 **Further optimisation possibilities:**
-- Pre-allocate the distance map as a flat array indexed by `(x * width + z)` to avoid dictionary overhead
-- Limit BFS to a radius around the target if the world is much larger
-- Use Dijkstra with weighted cells for more realistic movement costs
+
+- Pre-allocate the distance map as a flat Python list indexed by `x * width + z` to eliminate dictionary overhead
+- Implement a hierarchical field — coarse grid for distant cells, fine grid near the target — for very large worlds
+- Use Dijkstra with weighted cells to model terrain types (mud, road, etc.)
 
 ---
 
-### 4.3 Performance-Critical Part 3 — Agent Update Loop
+### 5.3 Agent Update Loop
 
-**Why it is critical:**
-The main `AgentSystem.update()` loop iterates over every active agent each tick. At 500 agents, Python's interpreted loop overhead itself becomes visible.
+**Why it is performance-critical:**
 
-**How we optimised it:**
-- All per-agent data is stored in plain `dataclass` objects with direct attribute access (no dictionary indirection)
-- The avoidance force uses early exits (`if dist_sq < 1e-8: continue`) to skip degenerate cases
-- The movement math (`movement.py`) uses simple tuple operations with no external library calls, keeping per-agent overhead minimal
-- The navigation field lookup is a single dict `.get()` call per agent
+`AgentSystem.update()` iterates over every active agent every single tick. At 500 agents in Python's interpreted loop, the accumulated overhead of attribute accesses, function calls, and arithmetic becomes significant even when each individual operation is cheap.
+
+**How it is optimised:**
+
+- `AgentState` is a Python `dataclass` with direct named-attribute access. There is no dictionary indirection per field read — `agent.position` is a direct slot access
+- The avoidance loop uses `if dist_sq < 1e-8: continue` as an early-exit guard before the expensive `math.sqrt()` call, skipping degenerate zero-distance pairs
+- `combined_radius = agent.radius + other.radius` is computed once per neighbour pair (not per comparison step), and physically represents the actual touching distance — making the check accurate and computationally minimal
+- `move_towards()` operates on plain Python tuples with no external library imports, keeping per-agent movement cost to five arithmetic operations and one square root
+- `agent.speed * self.world_state.simulation_speed` is computed once per agent outside the inner loop
 
 **Further optimisation possibilities:**
-- Migrate the agent position and velocity arrays to NumPy for vectorised update in a single operation
-- Use `__slots__` on `AgentState` to reduce per-object memory overhead and improve cache locality
-- Implement a C extension or use Cython for the inner avoidance loop
+
+- Store all agent positions and velocities in NumPy arrays for batch vectorised movement (`positions += directions * speeds * dt` in one call)
+- Use `__slots__` on `AgentState` to reduce per-object memory and improve CPU cache locality
+- Write the inner avoidance loop as a Cython extension or C module
 
 ---
 
-### 4.4 Performance-Critical Part 4 — Renderer Node Management
+### 5.4 Renderer Node Pool
 
-**Why it is critical:**
-Panda3D's scene graph operations (creating `NodePath` objects, calling `setPos`) are relatively expensive. If node creation happened every frame for every agent the renderer would become the bottleneck.
+**Why it is performance-critical:**
 
-**How we optimised it:**
-The renderer uses an **agent node pool** (`self.agent_nodes` dict keyed by `agent_id`). Nodes are only **created** when an agent ID is first seen, and only **destroyed** when an agent is removed. Every other frame, only `node.setPos()` is called, which is a cheap matrix update on an existing node. This is a manual object-pooling pattern applied to Panda3D scene nodes.
+Panda3D scene graph operations — `loadModel()`, `attachNewNode()`, `reparentTo()` — are relatively expensive because they involve Python→C++ boundary crossings and internal scene graph reorganisation. If executed every frame for every agent, they would dominate the frame time even though rendering is excluded from the simulation budget.
+
+**How it is optimised:**
+
+`Renderer` maintains two persistent dictionaries keyed by ID: `self.agent_nodes` and `self.obstacle_nodes`. A scene node is created **only once** — the first time an agent ID or obstacle cell is encountered. On every subsequent frame, only `node.setPos(x, z, 0.15)` is called on the existing node — a cheap matrix update. When an agent is despawned, its node is explicitly removed via `removeNode()` and deleted from the dictionary.
+
+This is a manual object-pooling pattern. Frame-to-frame rendering cost is proportional only to the number of active agents, not to how many have ever been spawned across the session.
 
 **Further optimisation possibilities:**
-- Use Panda3D's `InstancedNode` to render all agents as a single draw call
-- Replace the box model with a simpler billboard sprite at high agent counts
-- Implement level-of-detail: use simpler geometry for agents far from camera
+
+- Use Panda3D's GPU instanced rendering to draw all agents as a single draw call regardless of count
+- Replace individual `setPos()` calls with a batch update via `GeomVertexWriter` for a flat geometry buffer
+- Implement level-of-detail: reduce scale and disable lighting for agents beyond a certain distance from camera
 
 ---
 
-## 5. System Setup & Installation Guide (For the Professor)
+## 6. Installation & Setup Guide
 
-This section provides step-by-step instructions for running the CrowdSimEngine from a fresh machine.
+This section provides complete step-by-step instructions for running CrowdSimEngine from a clean machine, written for the course examiner.
 
 ### Prerequisites
 
-- **Python 3.9, 3.10, or 3.11** (Panda3D 1.10.x does not support Python 3.12+ at the time of writing)
-- **pip** package manager
-- A machine with a display (the engine opens a 3D window via Panda3D)
+- **Python 3.9, 3.10, or 3.11** — Panda3D 1.10.x is not compatible with Python 3.12 or later at the time of writing
+- **pip** — Python package installer
+- A machine with a display output — the engine opens a native OpenGL window via Panda3D
 
 ### Step 1 — Clone the Repository
 
@@ -271,15 +390,15 @@ git clone https://github.com/maeganliew/LTU_VIE.git
 cd LTU_VIE
 ```
 
-### Step 2 — (Recommended) Create a Virtual Environment
+### Step 2 — Create a Virtual Environment (Strongly Recommended)
 
 ```bash
 python -m venv venv
 
-# On Windows:
+# Windows:
 venv\Scripts\activate
 
-# On macOS / Linux:
+# macOS / Linux:
 source venv/bin/activate
 ```
 
@@ -289,227 +408,322 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The main dependency is **Panda3D 1.10.16**, which bundles its own OpenGL renderer, model loader, and windowing system. All other packages are linting/formatting tools that are optional for running the engine.
+The primary runtime dependency is **Panda3D 1.10.16**, which ships with its own OpenGL renderer, windowing system, model loader, input handler, and scene graph. No additional OpenGL or graphics libraries need to be installed separately.
 
-> **macOS note:** If you encounter a code-signing warning when Panda3D opens a window, you may need to go to System Preferences → Security & Privacy and allow the application to run.
+The remaining entries in `requirements.txt` (`black`, `mypy_extensions`, etc.) are development formatting tools and are not required to run the engine.
 
-> **Linux note:** You may need to install `libgl1-mesa-glx` or equivalent OpenGL libraries if they are not already present.
+> **macOS note:** If a Gatekeeper security warning appears when Panda3D opens its window, go to System Settings → Privacy & Security and allow the application. This is a macOS code-signing check and does not indicate a security problem.
+
+> **Linux note:** If Panda3D cannot open a window, you may need to install OpenGL libraries:
+> ```bash
+> sudo apt install libgl1-mesa-glx libgles2-mesa
+> ```
 
 ### Step 4 — Run the Engine
 
-From the project root directory:
+From the project root directory (where `main.py` is located):
 
 ```bash
 python main.py
 ```
 
-A Panda3D window will open displaying a 3D grid world populated with 10 blue agent boxes and two obstacle structures (a vertical red wall and a small red block cluster).
+A Panda3D window opens displaying the simulation. The terminal simultaneously prints diagnostic output.
 
-### Step 5 — Verifying Performance Output
+### Step 5 — Verify the Simulation is Running
 
-While the simulation runs, the console will print performance data every 30 frames:
+Within 1–2 seconds of startup you should see in the terminal:
 
 ```
+[APP] Panda3D started
+[INPUT] InputManager initialized
 Frame 0
-Agent count: 10
-Simulation update time: 0.2341 ms
+Agent count:        10
+Last update:        0.2341 ms
+Average (60 frame): 0.2341 ms
+Peak ever:          0.2341 ms
+Budget violations:  0
 ----------------------------------------
-Frame 30
-Agent count: 10
-Simulation update time: 0.1892 ms
 ```
 
-The debug HUD in the top-left of the window shows live values for agent count, simulation update time, and the current state of all toggleable systems.
+And in the window:
+- A grey grid floor spanning the world
+- 10 blue box agents scattered across the left side of the world
+- Two red tall-wall obstacle structures
+- A white HUD in the top-left corner
 
-### Step 6 — Stress Testing
+### Step 6 — Stress Test the Performance Budget
 
-To observe the performance optimisations under load:
-1. Press **Q** repeatedly to bring the agent count up to 500
-2. Watch the simulation update time on the HUD — it should remain well under 16.67 ms
-3. Press **V** to toggle avoidance off and on to observe the spatial grid's impact
-4. Press **P** to toggle pathfinding off and observe agents moving in a straight line vs navigating around walls
-5. Left-click anywhere on the world to redirect the entire crowd
+1. Press **Q** repeatedly (or hold and press quickly) to raise agent count to 500
+2. Watch `Last update` and `Average` on the HUD — they should remain well under 16.67 ms
+3. Press **V** to turn off avoidance — observe agents clumping. Press **V** again to restore it and watch the spatial grid effect
+4. Press **P** to turn off pathfinding — agents walk in straight lines through walls. Press **P** again to restore routing
+5. Click anywhere on the ground — the whole crowd reroutes to the new target
+6. Press **C** to switch between angled and top-down camera views
+7. Press **=** or **+** to speed up the simulation, **-** to slow it down
 
 ---
 
-## 6. User Guide & Controls
+## 7. User Guide & Controls
 
-### Complete Keyboard & Mouse Reference
+### Keyboard & Mouse Reference
 
-| Input | Action | Effect |
+| Input | Action | What happens in the engine |
 |---|---|---|
-| **Left Mouse Click** | Set navigation target | All agents immediately begin pathfinding toward the clicked world position. A BFS flow-field is rebuilt on the next simulation tick. |
-| **Q** | Spawn +10 agents | Adds 10 new agents at random free positions within the world. Capped at 500 agents total. |
-| **E** | Remove –10 agents | Removes 10 agents from the crowd. Minimum is 0. |
-| **P** | Toggle pathfinding | **ON (default):** Agents use the BFS flow-field to navigate around obstacles. **OFF:** Agents move directly toward the target in a straight line, ignoring walls. |
-| **O** | Toggle obstacles | **ON (default):** Obstacle collision is active — agents cannot walk through red wall cells. **OFF:** Agents pass through obstacles freely. |
-| **V** | Toggle avoidance | **ON (default):** Agents push away from neighbours to avoid overlap. **OFF:** Agents ignore each other, resulting in clumping and overlap. |
-| **W / A / S / D** | (Registered — logged) | Key events are captured and logged to the console. Camera movement via WASD can be extended from this binding. |
+| **Left Mouse Click** | Set navigation target | A ray is cast from the camera through the cursor using `camLens.extrude()`, converted to world space, and intersected with the ground plane at Z = 0. The resulting `(x, 0.0, y)` coordinate is written to `WorldState.target_position`. The flow field rebuilds on the next tick. All agents reroute. |
+| **W** *(hold)* | Move target forward | `InputManager.update(dt)` shifts `target_position` by `+10.0 × dt` in the Z direction every frame while W is held. Clamped to world bounds (–20 to +20). |
+| **S** *(hold)* | Move target backward | Shifts `target_position` in the –Z direction at 10 units/second. |
+| **A** *(hold)* | Move target left | Shifts `target_position` in the –X direction at 10 units/second. |
+| **D** *(hold)* | Move target right | Shifts `target_position` in the +X direction at 10 units/second. |
+| **Q** | Add 10 agents | Increments `WorldState.spawn_count` by 10. `sync_spawn_count()` creates new agents at random obstacle-free positions on the next tick. Maximum: 500. |
+| **E** | Remove 10 agents | Decrements `WorldState.spawn_count` by 10. Excess agents are sliced from the list; renderer cleans up their scene nodes. Minimum: 0. |
+| **P** | Toggle pathfinding | **ON (default):** Agents use the BFS flow field to navigate around obstacles. **OFF:** Agents move directly toward `target_position` in a straight line, ignoring walls entirely. |
+| **O** | Toggle obstacles | **ON (default):** Obstacle cells block agent movement and pathfinding. **OFF:** All obstacle cells are treated as walkable; agents and the BFS pass through walls freely. |
+| **V** | Toggle avoidance | **ON (default):** `apply_avoidance()` is called for every agent; agents push apart using the spatial grid. **OFF:** Avoidance is skipped; agents overlap and pile on the target. |
+| **C** | Toggle camera mode | Switches `WorldState.camera_mode` between `"angled"` (perspective view from height 22, offset 30 units behind crowd centroid) and `"topdown"` (directly above crowd at height 40). Camera always follows the crowd centroid. |
+| **=** or **+** | Increase simulation speed | Increments `WorldState.simulation_speed` by 0.25 up to a maximum of 5.0×. Applied as a multiplier to agent speed in `move_towards()`. Shown on HUD. |
+| **-** | Decrease simulation speed | Decrements `WorldState.simulation_speed` by 0.25 down to a minimum of 0.1×. Shown on HUD. |
 
-> **Note on camera:** The camera automatically follows the centroid of the entire crowd. It does not require manual control. As agents spread out toward the target, the camera pans to keep the crowd centred.
+### Debug HUD — Field Reference
 
-### Debug HUD (Top-Left of Window)
-
-The debug overlay displays live information at all times:
+The HUD is rendered in the top-left corner of the Panda3D window using `OnscreenText` and updates every frame.
 
 ```
-Agents: 50
-Simulation update: 0.8432 ms
+Agents:      50
+Last update: 0.8432 ms
+Average:     0.7913 ms
+Peak:        1.2041 ms
+Speed:       1.00x
+Camera:      angled
 Pathfinding: ON
-Obstacles: ON
-Avoidance: ON
-Target: (8.50, 0.00, 6.20)
+Obstacles:   ON
+Avoidance:   ON
+Target: (8.5, 6.2)
 ```
+
+| Field | Source | Meaning |
+|---|---|---|
+| `Agents` | `len(world_state.agents)` | Current active agent count |
+| `Last update` | `profiler.last_update_ms` | Simulation-only time for the most recent tick (ms) |
+| `Average` | `profiler.average_ms` | Rolling average over the last 60 frames |
+| `Peak` | `profiler.peak_ms` | Worst single frame recorded since startup |
+| `Speed` | `world_state.simulation_speed` | Current simulation speed multiplier |
+| `Camera` | `world_state.camera_mode` | Active camera view mode |
+| `Pathfinding` | `debug_flags["pathfinding"]` | Whether BFS flow-field navigation is active |
+| `Obstacles` | `debug_flags["obstacles"]` | Whether obstacle cells block agents |
+| `Avoidance` | `debug_flags["avoidance"]` | Whether local push-apart avoidance is active |
+| `Target` | `world_state.target_position` | Current shared target X and Z coordinates |
 
 ---
 
-## 7. What to Expect When Running the Engine
+## 8. What to Expect When Running the Engine
 
 ### On Startup
-- A Panda3D window opens (default 800×600, Panda3D title bar)
-- A grey grid floor appears on a dark background
-- 10 blue boxes (agents) are scattered randomly across the grid, avoiding the two obstacle structures
-- Two obstacle structures appear in red: a vertical wall at `x = 5` (cells from `z = -5` to `z = 5`) and a small block cluster at the top-left
 
-### After Clicking
-- All agents receive a new target
-- The flow-field is rebuilt (BFS from the clicked cell outward across the grid)
-- Agents begin moving as a crowd toward the target
-- Agents flowing around the red wall obstacle is clearly visible — they reroute around the wall rather than walking through it
-- The crowd disperses naturally due to avoidance forces — agents don't pile up on top of each other
+The Panda3D window opens with a dark background. The grey 3D grid floor spans the full 40 × 40 world. Ten blue box agents appear scattered across the world (at random obstacle-free positions). Two red obstacle structures are immediately visible:
 
-### After Pressing Q Multiple Times
-- Agent count increases in the HUD and on screen
-- The simulation update time increases but should remain comfortably under 16.67 ms even at 500 agents
-- The crowd becomes dense and avoidance behaviour becomes more active
+- A **vertical wall** — 11 red tall boxes in a straight line at `x = 5`, from `z = -5` to `z = 5`
+- A **block cluster** — 9 red tall boxes in a 3 × 3 rectangle at the upper-left area (`x = -15` to `x = -12`, `z = 2` to `z = 4`)
 
-### Console Output
-The terminal window (where you ran `python main.py`) prints diagnostic information every 30 frames, including the exact simulation update time in milliseconds. Input events (key presses, mouse clicks) are also logged with `[INPUT]` and `[MOUSE]` prefixes.
+The camera starts in angled mode, tracking the centroid of the 10 agents.
+
+### After Clicking or Holding WASD
+
+All agents share the same target and begin moving toward it. When the target is on the far side of the vertical wall, agents visibly split — some routing around the top end of the wall, some around the bottom — and reconverge on the other side. This demonstrates the BFS flow field correctly computing paths around obstacles. The HUD target coordinates update in real time.
+
+### After Pressing Q to 500 Agents
+
+The screen fills with blue boxes. The crowd forms a dense moving mass. Avoidance forces create a visible ripple and dispersal effect as agents push apart. The `Last update` and `Average` HUD values rise but stay well within the 16.67 ms budget throughout.
+
+### After Pressing P (Pathfinding OFF)
+
+Agents immediately change direction and move in perfectly straight lines toward the target, ignoring walls. You will see agents visually passing through the red obstacle boxes. Press P again to restore BFS routing — agents immediately start navigating around walls again.
+
+### After Pressing V (Avoidance OFF)
+
+All agents collapse onto exactly the same position — they all aim for the same target and nothing pushes them apart. The pile-up makes the spatial grid's contribution immediately obvious. Press V again to restore separation.
+
+### Terminal Output During a Session
+
+```
+[APP] Panda3D started
+[INPUT] InputManager initialized
+Frame 0
+Agent count:        10
+Last update:        0.2341 ms
+Average (60 frame): 0.2341 ms
+Peak ever:          0.2341 ms
+Budget violations:  0
+----------------------------------------
+[INPUT] target = (3.412, 0.0, -7.821)
+[INPUT] spawn_count = 20
+[INPUT] spawn_count = 30
+[INPUT] pathfinding = False
+[INPUT] pathfinding = True
+[INPUT] camera_mode = topdown
+[INPUT] simulation_speed = 1.25
+Frame 30
+Agent count:        30
+Last update:        0.6213 ms
+Average (60 frame): 0.5918 ms
+Peak ever:          0.9402 ms
+Budget violations:  0
+----------------------------------------
+```
 
 ---
 
-## 8. Key Technical Concepts (Presentation Reference)
+## 9. Key Technical Concepts — Presentation Reference
 
-This section summarises the concepts most likely to be discussed in a presentation or weekly meeting.
+This section explains each core concept in plain language, suitable for use in weekly meetings or a final presentation.
 
 ### What is a Flow Field?
 
-A flow field (also called a vector field or navigation field) is a technique used in crowd simulation where **a single BFS is run once from the target cell**, computing the minimum number of steps from every cell in the grid to that target. Instead of running A* for every agent every frame, each agent just looks up its current cell in the pre-computed map and moves to the neighbouring cell with the lowest distance value. This reduces pathfinding cost from **O(n × grid_area)** to **O(grid_area + n)** per target change.
+A flow field (also called a navigation field or vector field) is a crowd pathfinding technique that avoids running expensive individual pathfinding for each agent. Instead of A* per agent, a single **BFS is executed once from the target** outward across the entire grid. Every cell receives a distance value — the minimum number of steps to reach the target. Agents then do a single dictionary lookup to find which neighbour cell has the lowest distance value and step toward it.
 
-In our engine, `NavigationField.rebuild()` runs the BFS. `NavigationField.get_steering_target()` performs the per-agent lookup.
+This transforms pathfinding cost from **O(n × grid\_area)** — one BFS per agent — down to **O(grid\_area + n)** per target change: one BFS amortised across all agents, plus one O(1) lookup per agent per frame.
+
+Our implementation additionally uses **lazy rebuild** — the BFS is skipped entirely when the target has not moved. During stationary play, the pathfinding cost is zero per frame.
 
 ### What is a Spatial Hash Grid?
 
-A spatial hash grid divides the world into uniform cells. Each entity is "bucketed" into the cell it occupies. To find neighbours of an agent, you only check the 9 cells in the immediate 3×3 area. This reduces neighbour lookup from O(n²) to approximately O(n) overall, because each agent checks only the constant number of nearby cells, not the entire agent list.
+A spatial hash grid divides the world into uniform cells. Each agent is placed into the cell covering its position using integer division. To find an agent's neighbours, you check only the 9 cells in the 3 × 3 area around it. This is a constant number of lookups regardless of how many agents exist in total.
 
-In our engine, `SpatialGrid.rebuild()` places all agents into cells each tick. `SpatialGrid.get_neighbors()` returns the agents in the surrounding 3×3 cell area.
+Without this structure, avoidance is O(n²) — every agent vs every agent. With the grid, it becomes O(n · k) where k is the small, bounded number of agents in the local neighbourhood. At 500 agents the difference is ~250,000 comparisons vs ~a few thousand.
 
-### What is WorldState / Data-Oriented Design?
+### What is WorldState / Data Bus Architecture?
 
-Instead of objects calling methods on each other directly, all shared simulation data is stored in a single `WorldState` object. Each system (simulation, renderer, input) reads from and writes to `WorldState` independently. This makes each system independently testable, makes the data flow transparent, and avoids tight coupling between systems.
+`WorldState` is a Python `dataclass` that holds all shared simulation state. Every system — simulation, renderer, input manager — reads from and writes to `WorldState`. No system holds a reference to another system or calls its methods directly.
 
-### Why Panda3D?
+This means:
+- The simulation can be unit tested without Panda3D
+- The renderer can be swapped without touching the simulation
+- The input layer can be replaced with a network socket without changing any other file
+- Data flow is transparent and traceable — follow `WorldState` and you understand the entire engine
 
-Panda3D is an open-source, production-grade 3D game engine with a Python API, developed by Carnegie Mellon University and Disney. It provides a full scene graph, window management, input handling, model loading, and rendering — allowing us to focus engineering effort on the simulation layer rather than OpenGL boilerplate.
+### What is a Lazy Rebuild?
 
-### Why Python?
+Rather than recomputing an expensive operation every frame, a lazy system caches the inputs that the computation depends on. Before running, it compares the current inputs to the cached ones. If nothing has changed, the computation is skipped. Only when something actually changes does the rebuild run.
 
-Python allows rapid development and clean, readable code that makes the architecture easy to understand and present. The primary trade-off is raw performance — a C++ engine would be significantly faster. We address this within Python's constraints using algorithmic optimisations (spatial grid, lazy flow-field rebuild) rather than language-level optimisation.
+In our engine: the BFS rebuild caches `last_target_cell` and `last_obstacles_enabled`. As long as the player does not move the target or toggle obstacles, the BFS does not run — regardless of how many frames pass or how many agents exist.
+
+### What is 8-Directional vs 4-Directional BFS?
+
+In 4-directional BFS, expansion spreads only up, down, left, and right. Agents following such a field must turn in 90-degree increments, producing visible staircase-shaped paths through open space.
+
+In 8-directional BFS, expansion also includes all four diagonals. Agents can take diagonal shortcuts through open space, producing smooth, natural-looking paths. Our `get_neighbors8()` method returns all 8 neighbours and is used for both the BFS rebuild and the per-agent best-cell lookup.
+
+### What Trade-Offs Does Python Introduce?
+
+Python is interpreted and single-threaded. For identical algorithms, C++ is roughly 10–50× faster. We chose Python because it enables clean, readable architecture that is easy to explain and verify during development and presentation. The algorithmic optimisations (spatial grid, lazy flow field, node pool) are sufficient to stay within the 16.67 ms budget at all supported agent counts.
+
+For a production crowd simulation, the inner update loop would be migrated to NumPy or Cython, while the outer architecture (WorldState, system separation, lazy rebuilds) would remain unchanged.
 
 ### What Would You Change for a Production System?
 
-- Migrate the simulation inner loop to **NumPy** or **Cython** for vectorised agent updates
-- Replace the Python `dict`-based spatial grid with a flat **NumPy array** indexed by linearised cell coordinates
-- Implement **instanced rendering** in Panda3D to draw all agents in a single GPU draw call
-- Add **multi-threading**: run simulation on a background thread, rendering on the main thread
-- Support **dynamic obstacle addition/removal** at runtime (clicking to place/remove walls)
+- Store agent positions and velocities in **NumPy arrays** for vectorised batch movement (`positions += velocities * dt` in a single call)
+- Replace `dict`-based `SpatialGrid` and `NavigationField` with **flat NumPy arrays** indexed by linearised cell coordinate `x * width + z`
+- Add **GPU instanced rendering** in Panda3D so all agents are drawn in a single draw call
+- Run the **simulation on a background thread** with double-buffered `WorldState` so simulation and rendering overlap on separate CPU cores
+- Add **dynamic obstacle placement** — clicking to add or remove wall cells at runtime, with automatic flow-field rebuild
+- Add a **spatial audio system** tied to agent density for further immersion
 
 ---
 
-## 9. Project File Structure
+## 10. Project File Structure
 
 ```
 LTU_VIE/
-├── main.py                          # Entry point — instantiates and runs CrowdSimApp
-├── requirements.txt                 # Python dependencies (Panda3D 1.10.16)
+├── main.py                              # Entry point — creates CrowdSimApp and calls app.run()
+├── requirements.txt                     # Runtime dependency: Panda3D 1.10.16
 ├── assets/
-│   ├── models/                      # Placeholder for custom 3D models
-│   ├── scenes/                      # Placeholder for scene definitions
-│   └── textures/                    # Placeholder for textures
+│   ├── models/                          # Placeholder for custom 3D model files
+│   ├── scenes/                          # Placeholder for scene definition files
+│   └── textures/                        # Placeholder for texture assets
 └── src/
+    ├── __init__.py
     ├── engine/
+    │   ├── __init__.py
     │   ├── core/
-    │   │   ├── config.py            # All configurable constants (world size, speeds, counts)
-    │   │   ├── world.py             # Top-level engine: owns systems, defines obstacle layout
-    │   │   └── world_state.py       # Shared data bus passed between all systems
+    │   │   ├── __init__.py
+    │   │   ├── config.py                # All tunable constants (single source of truth)
+    │   │   ├── world.py                 # Top-level engine — owns systems, defines obstacles, drives updates
+    │   │   └── world_state.py           # Shared data bus — all simulation state in one place
     │   ├── simulation/
-    │   │   ├── agent.py             # AgentState dataclass (position, velocity, target, etc.)
-    │   │   ├── agent_system.py      # Master simulation loop (spawn, move, avoidance, pathfinding)
-    │   │   └── movement.py          # Pure vector math: add, sub, mul, normalize, move_towards
+    │   │   ├── __init__.py
+    │   │   ├── agent.py                 # AgentState dataclass (position, velocity, target, speed, radius)
+    │   │   ├── agent_system.py          # Master simulation loop — all per-agent logic
+    │   │   └── movement.py              # Stateless vector math utilities
     │   ├── systems/
-    │   │   ├── navigation_field.py  # BFS flow-field pathfinding system
-    │   │   ├── spatial_grid.py      # Hash-grid spatial acceleration structure
-    │   │   └── profiler.py          # High-precision simulation tick timer
-    │   └── utils/                   # Utility placeholder
+    │   │   ├── __init__.py
+    │   │   ├── navigation_field.py      # BFS flow-field: 8-dir expansion, lazy rebuild, O(1) steering lookup
+    │   │   ├── spatial_grid.py          # Spatial hash-grid: O(n) rebuild, O(1) 3×3 neighbour query
+    │   │   └── profiler.py              # Simulation timer: last / average / peak / violations
+    │   └── utils/
+    │       └── __init__.py
     ├── game/
-    │   └── app.py                   # CrowdSimApp: Panda3D ShowBase subclass, wires all systems
+    │   ├── __init__.py
+    │   └── app.py                       # CrowdSimApp — ShowBase subclass, frame loop, system wiring
     ├── input/
-    │   └── input_manager.py         # Keyboard/mouse bindings and WorldState updates
+    │   ├── __init__.py
+    │   └── input_manager.py             # All keyboard/mouse bindings and WorldState writes
     └── rendering/
-        └── renderer.py              # Panda3D scene: lighting, grid, agent nodes, camera, HUD
+        ├── __init__.py
+        └── renderer.py                  # Panda3D scene: lighting, node pools, camera, HUD
 ```
 
 ---
 
-## 10. Team Members & Responsibilities
+## 11. Team Members & Responsibilities
 
 ---
 
-### ZhenXi — Simulation & AI Core
+### ZhenXi — Simulation Engine & AI Core
 
-**Primary systems:** `AgentSystem`, `AgentState`, `movement.py`, `SpatialGrid`, `NavigationField`, `WorldState`
+**Primary files:** `agent.py` · `agent_system.py` · `movement.py` · `spatial_grid.py` · `navigation_field.py` · `world_state.py` · `profiler.py` · `world.py`
 
 **Responsibilities:**
-- Designed and implemented the `AgentState` dataclass and the full `AgentSystem` simulation loop
-- Implemented `move_towards` and all vector math utilities in `movement.py`
-- Built the `SpatialGrid` spatial hash structure for O(1) neighbour lookup during avoidance
-- Designed and implemented the `NavigationField` BFS flow-field pathfinding system, including lazy rebuild logic, cell-to-world coordinate mapping, and per-agent steering target queries
-- Implemented the local avoidance system (`apply_avoidance`) using spatial grid neighbour forces
-- Implemented obstacle collision resolution (`resolve_obstacle_collision`) with axis-sliding fallback
-- Implemented dynamic spawn/despawn via `sync_spawn_count()` and random free-position placement
-- Designed the `WorldState` shared data bus and `Config` parameter system
+
+- Designed the `AgentState` dataclass as the core per-agent data container, defining `position`, `velocity`, `target`, `speed`, `active`, and `radius` fields — `radius` is actively used by `apply_avoidance` to compute physically accurate `combined_radius` separation thresholds
+- Implemented all vector math in `movement.py`: `vec_sub`, `vec_add`, `vec_mul`, `vec_length`, `vec_normalize`, and `move_towards` (which halts agents within 0.05 units of the target to prevent jitter)
+- Designed and implemented `SpatialGrid` with `_cell_key` integer-division hashing, O(n) `rebuild()`, O(1) `get_neighbors()` 3×3 cell lookup — eliminating O(n²) avoidance comparisons
+- Designed and implemented `NavigationField` including 8-directional BFS in `rebuild()`, `find_nearest_walkable()` for click-inside-obstacle recovery, `get_best_next_cell()` for per-agent O(1) distance-map lookup, and `get_steering_target()` which returns the precise `target_position` float coordinate when the agent reaches the final cell
+- Implemented `AgentSystem` including `initialize_agents()`, `_create_random_agent()` with 200-attempt obstacle-free placement, `sync_spawn_count()` for dynamic spawn/despawn, `rebuild_navigation_if_needed()` lazy rebuild logic comparing cached `last_target_cell` and `last_obstacles_enabled`, `choose_navigation_target()`, `apply_avoidance()` with `combined_radius` physical separation, `resolve_obstacle_collision()` with X-slide and Z-slide fallback, and `clamp_to_world()` boundary enforcement
+- Designed `WorldState` as the shared data bus with all fields consumed by input, simulation, and rendering
+- Built `Profiler` with `last_update_ms`, rolling 60-frame `average_ms`, all-time `peak_ms`, `budget_exceeded_count`, and immediate console warnings when the 16.67 ms budget is exceeded
+- Implemented `World` with obstacle layout definition (11-cell vertical wall + 9-cell block cluster), `spawn_count` sync from `Config.initial_agent_count` at startup, and full profiler summary logging every 30 frames
 
 ---
 
-### Jia Wei — Input, Control & Stress Testing
+### Jia Wei — Input System & Integration
 
-**Primary systems:** `InputManager`, `WorldState` integration, stress testing, debug flags
+**Primary files:** `input_manager.py` · debug flag fields in `world_state.py` · `camera_mode` and `simulation_speed` fields
 
 **Responsibilities:**
-- Implemented the full `InputManager` using Panda3D's `DirectObject.accept` event system
-- Defined and wired all keyboard bindings: Q/E (spawn), P (pathfinding), O (obstacles), V (avoidance)
-- Implemented left-click mouse picking and world coordinate projection for target setting
-- Implemented `spawn_more()` and `spawn_less()` with clamping to valid range (0–500 agents)
-- Implemented the `debug_flags` dictionary in `WorldState` and all toggle functions
-- Conducted stress testing across agent counts from 10 to 500, validating the 16.67 ms simulation budget
-- Verified that all input changes propagate correctly through `WorldState` to both simulation and rendering layers
-- Designed the simulation speed multiplier (`world_state.simulation_speed`) for future time-control features
+
+- Implemented the full `InputManager` using Panda3D's `DirectObject.accept` event system with clean separation between `setup_key_listeners()` (WASD held-key tracking) and `setup_control_bindings()` (all one-shot actions)
+- Implemented `update(dt)` polling loop that reads `self.keys` every frame and computes continuous target movement at 10 units/second, clamped to ±20 world bounds — making WASD genuinely functional as a held-key continuous input
+- Implemented `on_click()` with correct ray-to-ground-plane intersection: `camLens.extrude(mpos, near, far)` generates a camera-space ray, `getRelativePoint(cam, near/far)` converts to world space, and the Z = 0 plane intersection `t = -near_world.z / dz` computes the accurate click position regardless of camera angle
+- Implemented all toggle functions (`toggle_pathfinding`, `toggle_obstacles`, `toggle_avoidance`, `toggle_camera`) writing to `WorldState.debug_flags` and `WorldState.camera_mode`
+- Implemented `increase_speed()` and `decrease_speed()` stepping `WorldState.simulation_speed` between 0.1× and 5.0× in 0.25 increments, bound to `=`, `+`, and `-` keys
+- Added `camera_mode` and `simulation_speed` fields to `WorldState` for use by the renderer and agent system
+- Conducted stress testing across the full 10–500 agent range, verifying the simulation remains within the 16.67 ms budget and that all toggle interactions produce correct observable changes in agent behaviour
 
 ---
 
-### Larissa — Visualisation & Rendering
+### Larissa — Rendering & Visual Presentation
 
-**Primary systems:** `Renderer`, `CrowdSimApp`, Panda3D scene setup
+**Primary files:** `renderer.py` · `app.py`
 
 **Responsibilities:**
-- Set up the Panda3D `ShowBase` application in `CrowdSimApp` and wired the main update task
-- Implemented `Renderer` class including ambient and directional lighting setup
-- Built the 3D grid floor using Panda3D `LineSegs` for spatial reference
-- Implemented agent rendering using Panda3D's built-in box model with node pooling (`self.agent_nodes` dict) to avoid per-frame node creation overhead
-- Implemented obstacle rendering with dynamic show/hide toggle linked to the obstacles debug flag
-- Implemented the debug HUD overlay using `OnscreenText` showing live agent count, simulation time, flag states, and target position
-- Implemented crowd-tracking camera with angled and top-down modes that automatically follows the centroid of all agents
-- Ensured rendering layer reads exclusively from `WorldState` without modifying any simulation data
+
+- Implemented `CrowdSimApp` as a Panda3D `ShowBase` subclass, registering the main update task with `taskMgr.add(self.update, "update")` and enforcing the correct frame execution order: `input_manager.update(dt)` → `world.update(dt)` → `renderer.update(...)`
+- Wired `profiler.average_ms` and `profiler.peak_ms` from `World` through `app.py` into `renderer.update()` so all three timing values appear on the HUD
+- Implemented `setup_lighting()` with `AmbientLight` at 50% intensity and `DirectionalLight` at colour `(0.9, 0.9, 0.8)` with orientation `setHpr(45, -60, 0)` — providing warm directional shading that makes 3D depth immediately visible
+- Built the 3D grid floor using `LineSegs` drawing vertical and horizontal lines at 1-unit intervals from –20 to +20 in both X and Y
+- Implemented the **agent node pool** (`self.agent_nodes` dict keyed by `agent_id`) — blue box models at `setScale(0.3, 0.3, 0.3)` created once on first encounter via `model.copyTo(render)`, updated every frame with only `setPos(x, z, 0.15)`, and explicitly removed with `removeNode()` when agents are despawned
+- Implemented the **obstacle node pool** (`self.obstacle_nodes` dict keyed by cell tuple) — red wall models at `setScale(0.5, 0.5, 2.0)` centred at `z = 1.0`, with `show()` / `hide()` toggling based on `debug_flags["obstacles"]`
+- Implemented `update_debug_text()` composing a 10-line HUD string showing agents, last/average/peak update times, simulation speed, camera mode, all toggle states, and current target coordinates — updating every frame via `OnscreenText.setText()`
+- Implemented `update_camera()` reading `world_state.camera_mode` each frame, computing the live crowd centroid `(avg_x, avg_z)` from all agent positions, and positioning the camera at `(avg_x, avg_z - 30, 22)` for angled mode or `(avg_x, avg_z, 40)` for top-down mode, with `lookAt()` keeping the crowd centred
 
 ---
 

@@ -4,6 +4,7 @@ import random
 from src.engine.simulation.agent import AgentState
 from src.engine.simulation.movement import move_towards
 from src.engine.systems.spatial_grid import SpatialGrid
+from src.engine.systems.navigation_field import NavigationField
 
 class AgentSystem:
     def __init__(self, world_state, config):
@@ -13,7 +14,14 @@ class AgentSystem:
         
         self.config = config
         self.grid = SpatialGrid(config.cell_size)
+        
+        # creates a shared navigation field for the whole simulation
+        self.navigation_field = NavigationField(config)
+        
         self.next_id = 1
+        
+        # remembers the previous target cell so do not rebuild the navigation field every frame
+        self.last_target_cell = None
 
     # use default initial num form config if no count provided
     def initialize_agents(self, count=None):
@@ -25,15 +33,6 @@ class AgentSystem:
         # create the requested number of agents
         for _ in range(count):
             self.world_state.agents.append(self._create_random_agent())
-
-    def position_to_cell(self, position):
-        # convert floating-point world position into integer grid cell
-        x, _, z = position
-        return int(x // self.config.cell_size), int(z // self.config.cell_size)
-    
-    def is_blocked(self, position):
-        cell = self.position_to_cell(position)
-        return cell in self.world_state.obstacles
 
     def _create_random_agent(self):
         # try multiple times to find a random free position
@@ -64,8 +63,7 @@ class AgentSystem:
         )
         self.next_id += 1
         return agent
-
-
+    
     def sync_spawn_count(self):
         # ensure the actual number of agents matches world_state.spawn_count
         desired = self.world_state.spawn_count
@@ -78,21 +76,50 @@ class AgentSystem:
         elif desired < current:
             self.world_state.agents = self.world_state.agents[:desired]
             
-            
-    def relocate_if_inside_obstacle(self, agent):
-        if not self.is_blocked(agent.position):
+
+    # checks pathfinding enabled, target cell change? field empty? then rebuild the navigation field
+    def rebuild_navigation_if_needed(self):
+        if not self.world_state.debug_flags.get("pathfinding", True):
             return
 
-        # relocate it to a free random position.
-        max_attempts = 200
-        for _ in range(max_attempts):
-            x = random.uniform(-self.config.world_width / 2, self.config.world_width / 2)
-            z = random.uniform(-self.config.world_height / 2, self.config.world_height / 2)
-            candidate = (x, 0.0, z)
+        target_cell = self.navigation_field.position_to_cell(
+            self.world_state.target_position
+        )
 
-            if not self.is_blocked(candidate):
-                agent.position = candidate
-                return
+        if target_cell != self.last_target_cell or not self.navigation_field.distance_map:
+            self.navigation_field.rebuild(
+                self.world_state.target_position,
+                self.world_state.obstacles,
+            )
+            self.last_target_cell = self.navigation_field.target_cell
+            
+    # chooses what the agent should move toward this frame
+    def choose_navigation_target(self, agent):
+        
+        if self.world_state.debug_flags.get("pathfinding", True):
+            
+            #do not aim directly at the final clicked target, ask the navigation field for the next steering point
+            return self.navigation_field.get_steering_target(
+                agent.position,
+                self.world_state.target_position,
+            )
+            
+        # move directly toward the world target as before
+        return self.world_state.target_position
+
+    def position_to_cell(self, position):
+        # convert floating-point world position into integer grid cell
+        x, _, z = position
+        return int(math.floor(x / self.config.cell_size)), int(math.floor(z / self.config.cell_size))
+    
+    
+    def is_blocked(self, position):
+        if not self.world_state.debug_flags.get("obstacles", True):
+            return False
+
+        cell = self.position_to_cell(position)
+        return cell in self.world_state.obstacles
+    
 
     def resolve_obstacle_collision(self, current_position, proposed_position):
         if not self.world_state.debug_flags.get("obstacles", True):
@@ -117,7 +144,23 @@ class AgentSystem:
 
         # if both blocked, stay in place
         return current_position
-    
+
+            
+    def relocate_if_inside_obstacle(self, agent):
+        if not self.is_blocked(agent.position):
+            return
+
+        # relocate it to a free random position.
+        max_attempts = 200
+        for _ in range(max_attempts):
+            x = random.uniform(-self.config.world_width / 2, self.config.world_width / 2)
+            z = random.uniform(-self.config.world_height / 2, self.config.world_height / 2)
+            candidate = (x, 0.0, z)
+
+            if not self.is_blocked(candidate):
+                agent.position = candidate
+                return
+
     
 
     def update(self, dt):
@@ -126,14 +169,18 @@ class AgentSystem:
         
         # rebuild grid using current agent position
         self.grid.rebuild(self.world_state.agents)
+        
+        self.rebuild_navigation_if_needed()
 
         # loop through every agent and update it
         for agent in self.world_state.agents:
             agent.target = self.world_state.target_position
+            
+            steering_target = self.choose_navigation_target(agent)
 
             new_position, velocity = move_towards(
                 agent.position,
-                agent.target,
+                steering_target,
                 agent.speed * self.world_state.simulation_speed,
                 dt,
             )

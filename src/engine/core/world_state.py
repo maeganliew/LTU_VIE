@@ -20,7 +20,7 @@ class WorldState:
     simulation_speed: float = 1.0
     
     debug_flags: Dict[str, bool] = field(default_factory=lambda: {
-        "pathfinding": False,
+        "pathfinding": True,
         "avoidance": True,  # avoidance logic
         "profiling": True,  #show timing info
         "obstacles": True, #toggle obstacle handling on or off

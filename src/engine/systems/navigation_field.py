@@ -110,7 +110,7 @@ class NavigationField:
             current = queue.popleft()
             current_distance = self.distance_map[current]
 
-            for neighbor in self.get_neighbors4(current):
+            for neighbor in self.get_neighbors8(current):
                 if neighbor in self.distance_map:
                     continue
                 if not self.is_walkable(neighbor, obstacles):
@@ -131,7 +131,7 @@ class NavigationField:
         best_cell = None
         best_distance = current_distance
 
-        for neighbor in self.get_neighbors4(current_cell):
+        for neighbor in self.get_neighbors8(current_cell):
             neighbor_distance = self.distance_map.get(neighbor, float("inf"))
             if neighbor_distance < best_distance:
                 best_distance = neighbor_distance

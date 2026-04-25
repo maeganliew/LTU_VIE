@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Tuple
 
 
@@ -17,8 +17,6 @@ class AgentState:
     speed: float = 3.0
     active: bool = True
     
-    # approximate size of agent for spacing
+    # approximate size used for avoidance separation distance
     radius: float = 0.4
     
-    # makes a fresh empty list for each agent
-    path: list = field(default_factory=list)

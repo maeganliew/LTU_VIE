@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Tuple
+from enum import Enum  
 
 
 # three states of an agent's autonomous behaviour

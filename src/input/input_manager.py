@@ -1,5 +1,5 @@
 from direct.showbase.DirectObject import DirectObject
-from panda3d.core import Point3
+from panda3d.core import Point3, Plane, Vec3
 
 
 class InputManager(DirectObject):
@@ -86,35 +86,54 @@ class InputManager(DirectObject):
         self.world_state.spawn_count = max(0, self.world_state.spawn_count - 10)
         print("[INPUT] spawn_count =", self.world_state.spawn_count)
         
-    # mouse click — ray cast onto the Z=0 ground plane
+        
+    # Cast a ray from the camera through the mouse cursor and find where it hits the ground plane (Z = 0 in Panda3D world space).
     def on_click(self):
+        #   Panda3D X  →  simulation X  (left/right)
+        #   Panda3D Y  →  simulation Z  (forward/back, since agents use setPos(x, z, h))
+        #   Panda3D Z  →  height (always 0 for ground plane)
+
         if not self.base.mouseWatcherNode.hasMouse():
             return
 
         mpos = self.base.mouseWatcherNode.getMouse()
 
-        # build a ray from the camera through the mouse cursor
+        # extrude mouse position through the camera lens
+        # near and far are in camera-local coordinate space
         near = Point3()
         far = Point3()
         self.base.camLens.extrude(mpos, near, far)
 
-        # convert ray endpoints from camera space into world space
+        # convert from camera-local space to world (render) space
         near_world = self.base.render.getRelativePoint(self.base.cam, near)
-        far_world = self.base.render.getRelativePoint(self.base.cam, far)
+        far_world  = self.base.render.getRelativePoint(self.base.cam, far)
 
-        # intersect the ray with the ground plane (Z = 0 in Panda3D)
-        dz = far_world.z - near_world.z
-        if abs(dz) < 1e-6:
-            return  # ray is parallel to the ground, no intersection
+        # intersect the ray with the ground plane at Panda3D Z = 0
+        # Vec3(0, 0, 1) = normal pointing straight up (Z axis)
+        # Point3(0, 0, 0) = plane passes through the world origin
+        ground_plane = Plane(Vec3(0, 0, 1), Point3(0, 0, 0))
+        hit = Point3()
 
-        t = -near_world.z / dz
-        world_x = near_world.x + t * (far_world.x - near_world.x)
-        world_y = near_world.y + t * (far_world.y - near_world.y)
+        if not ground_plane.intersectsLine(hit, near_world, far_world):
+            # ray is exactly parallel to the ground, extremely rare, just ignore
+            print("[INPUT] click ray parallel to ground, ignoring")
+            return
 
-        # renderer maps simulation (sim_x, sim_z) → Panda3D (x, y, height)
-        # so Panda3D X = simulation X, Panda3D Y = simulation Z
-        self.world_state.target_position = (world_x, 0.0, world_y)
-        print("[INPUT] target =", self.world_state.target_position)
+        # map Panda3D coordinates to simulation coordinates
+        # Panda3D X = simulation X, Panda3D Y = simulation Z
+        sim_x = hit.x
+        sim_z = hit.y
+
+        # if click lands outside the world entirely, ignore it
+        # prevents the target from being permanently clamped to a world edge
+        half_w = 20.0
+        half_h = 20.0
+        if abs(sim_x) > half_w or abs(sim_z) > half_h:
+            print(f"[INPUT] click outside world bounds ({sim_x:.1f}, {sim_z:.1f}), ignoring")
+            return
+
+        self.world_state.target_position = (sim_x, 0.0, sim_z)
+        print(f"[INPUT] target = ({sim_x:.2f}, 0.0, {sim_z:.2f})")
 
 
     # feature toggles

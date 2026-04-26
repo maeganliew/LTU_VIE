@@ -32,6 +32,9 @@ class CrowdSimApp(ShowBase):
             self.world.profiler.last_update_ms,
             self.world.profiler.average_ms,
             self.world.profiler.peak_ms,
+            
+            # pass subsystem timing dict so HUD can display the breakdown
+            self.world.agent_system.timing,
         )
 
         return task.cont

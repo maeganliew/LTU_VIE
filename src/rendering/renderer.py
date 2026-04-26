@@ -1,6 +1,11 @@
 from panda3d.core import AmbientLight, DirectionalLight, LineSegs, TextNode
 from direct.gui.OnscreenText import OnscreenText
+from src.engine.simulation.agent import AgentBehavior
 
+# colours for each agent behaviour state
+_COLOUR_NAVIGATING = (0.2, 0.6, 1.0, 1)   # blue
+_COLOUR_ARRIVED    = (0.2, 0.9, 0.3, 1)   # green
+_COLOUR_WANDERING  = (0.9, 0.8, 0.1, 1)   # yellow
 
 class Renderer:
     def __init__(self, base):
@@ -8,6 +13,9 @@ class Renderer:
         self.agent_nodes = {}
         self.obstacle_nodes = {}
 
+        # target marker: created once, repositioned every frame
+        self.target_marker = None
+        
         self.setup_lighting()
         self.create_grid()
         self.create_debug_text()
@@ -50,26 +58,68 @@ class Renderer:
             align=TextNode.ALeft,
             mayChange=True,
         )
+        
+        
+    def _update_target_marker(self, target_position):
+        
+        # draw a bright green box at the current target position.
+        # created once, repositioned every frame.
+        # makes it obvious where the crowd is navigating toward.
+        
+        if self.target_marker is None:
+            model = self.base.loader.loadModel("models/box")
+            model.setScale(0.5, 0.5, 1.0)          # taller than agents so it's visible
+            model.setColor(0.1, 1.0, 0.1, 1)       # bright green
+            model.reparentTo(self.base.render)
+            self.target_marker = model
 
-    def update_debug_text(self, world_state, sim_update_ms, avg_ms, peak_ms):
+        tx, _, tz = target_position
+        # position the marker centred vertically above ground (half of 1.0 scale)
+        self.target_marker.setPos(tx, tz, 0.5)
+        
+    # HUD
+    def update_debug_text(self, world_state, sim_update_ms, avg_ms, peak_ms,
+                          timing=None):
         pathfinding = world_state.debug_flags.get("pathfinding", False)
-        obstacles = world_state.debug_flags.get("obstacles", False)
-        avoidance = world_state.debug_flags.get("avoidance", False)
-        target = world_state.target_position
+        obstacles   = world_state.debug_flags.get("obstacles",   False)
+        avoidance   = world_state.debug_flags.get("avoidance",   False)
+        target      = world_state.target_position
+
+        # count agents in each behaviour state
+        nav  = sum(1 for a in world_state.agents
+                   if a.behavior == AgentBehavior.NAVIGATING)
+        arr  = sum(1 for a in world_state.agents
+                   if a.behavior == AgentBehavior.ARRIVED)
+        wan  = sum(1 for a in world_state.agents
+                   if a.behavior == AgentBehavior.WANDERING)
+
+        subsystem_lines = ""
+        if timing:
+            subsystem_lines = (
+                f"Grid rebuild: {timing['grid_rebuild_ms']:.3f} ms\n"
+                f"Nav rebuild:  {timing['nav_rebuild_ms']:.3f} ms\n"
+                f"Agent loop:   {timing['agent_loop_ms']:.3f} ms\n"
+            )
 
         self.debug_text.setText(
-            f"Agents:      {len(world_state.agents)}\n"
-            f"Last update: {sim_update_ms:.4f} ms\n"
-            f"Average:     {avg_ms:.4f} ms\n"
-            f"Peak:        {peak_ms:.4f} ms\n"
-            f"Speed:       {world_state.simulation_speed:.2f}x\n"
-            f"Camera:      {world_state.camera_mode}\n"
-            f"Pathfinding: {'ON' if pathfinding else 'OFF'}\n"
-            f"Obstacles:   {'ON' if obstacles else 'OFF'}\n"
-            f"Avoidance:   {'ON' if avoidance else 'OFF'}\n"
-            f"Target: ({target[0]:.1f}, {target[2]:.1f})"
+            f"Agents: {len(world_state.agents)}  "
+            f"[Nav:{nav} Arr:{arr} Wan:{wan}]\n"
+            f"Last:    {sim_update_ms:.3f} ms\n"
+            f"Avg:     {avg_ms:.3f} ms\n"
+            f"Peak:    {peak_ms:.3f} ms\n"
+            f"Speed:   {world_state.simulation_speed:.2f}x\n"
+            f"Camera:  {world_state.camera_mode}\n"
+            f"Path: {'ON' if pathfinding else 'OFF'}  "
+            f"Obs: {'ON' if obstacles else 'OFF'}  "
+            f"Avoid: {'ON' if avoidance else 'OFF'}\n"
+            f"Target: ({target[0]:.1f}, {target[2]:.1f})\n"
+            f"{subsystem_lines}"
+            f"--- Legend: Blue=Nav  Green=Arr  Yellow=Wan ---\n"
+            f"WASD:move  Q/E:agents  P:path  O:obs  V:avoid\n"
+            f"C:camera   +/-:speed   Click:set target"
         )
-
+        
+        
     def draw_obstacles(self, obstacles, show_obstacles=True):
         existing_keys = set(self.obstacle_nodes.keys())
         obstacle_keys = set(obstacles)
@@ -99,25 +149,37 @@ class Renderer:
                 node.hide()
 
     def update(self, agents, world_state=None, sim_update_ms=0.0,
-               avg_ms=0.0, peak_ms=0.0):
+               avg_ms=0.0, peak_ms=0.0, timing=None):
         active_ids = set()
 
         for agent in agents:
             agent_id = agent.agent_id
             active_ids.add(agent_id)
 
+            # create node the first time we see this agent id
             if agent_id not in self.agent_nodes:
                 model = self.base.loader.loadModel("models/box")
                 model.setScale(0.3, 0.3, 0.3)
-                model.setColor(0.2, 0.6, 1.0, 1)
+                model.setColor(*_COLOUR_NAVIGATING)
                 node = model.copyTo(self.base.render)
                 self.agent_nodes[agent_id] = node
 
             node = self.agent_nodes[agent_id]
+
+            # update position
             x, _, z = agent.position
             node.setPos(x, z, 0.15)
 
-        # remove nodes for agents that have been despawned
+            # update colour to reflect current behaviour state
+            # blue=navigating, green=arrived, yellow=wandering
+            if agent.behavior == AgentBehavior.NAVIGATING:
+                node.setColor(*_COLOUR_NAVIGATING)
+            elif agent.behavior == AgentBehavior.ARRIVED:
+                node.setColor(*_COLOUR_ARRIVED)
+            elif agent.behavior == AgentBehavior.WANDERING:
+                node.setColor(*_COLOUR_WANDERING)
+
+        # remove nodes for agents that were despawned
         for stale_id in set(self.agent_nodes.keys()) - active_ids:
             self.agent_nodes[stale_id].removeNode()
             del self.agent_nodes[stale_id]
@@ -125,7 +187,10 @@ class Renderer:
         if world_state is not None:
             show_obstacles = world_state.debug_flags.get("obstacles", True)
             self.draw_obstacles(world_state.obstacles, show_obstacles=show_obstacles)
-            self.update_debug_text(world_state, sim_update_ms, avg_ms, peak_ms)
+            self._update_target_marker(world_state.target_position)
+            self.update_debug_text(
+                world_state, sim_update_ms, avg_ms, peak_ms, timing
+            )
             self.update_camera(agents, world_state.camera_mode)
 
     def update_camera(self, agents, camera_mode):
